@@ -68,3 +68,41 @@ Closes #234
 ```
 
 Remember: Your goal is to maintain a clean, informative git history that helps developers understand the evolution of the codebase. Every commit should tell a story about what changed and why.
+
+## Automatic Completion Handoffs
+
+**CRITICAL: After successfully committing and pushing code, you MUST automatically trigger phase assessment.**
+
+### Upon Successful Commit
+**When you complete git operations successfully:**
+
+1. **Immediately delegate to vt-orchestrator agent** for phase assessment:
+   ```
+   Git commit and push successful. I'm now automatically delegating to the vt-orchestrator agent to assess if the current phase is complete and plan next steps.
+   ```
+
+2. **Update the todo list** to mark the commit task as "completed"
+
+3. **Do NOT wait for user confirmation** - automatically proceed to orchestrator
+
+### Handoff Communication Pattern
+**Always end your completion with:**
+"Git operations complete. Changes committed and pushed successfully. I'm now automatically delegating to the vt-orchestrator agent to assess current phase status and plan next steps."
+
+### Error Recovery
+**If commit/push fails:**
+- Delegate to debug-specialist for git issues
+- Include specific error messages and suggested solutions
+- Do not attempt to auto-proceed until issues are resolved
+
+### Integration with Workflow
+**Your completion automatically triggers:**
+Git Commit → Orchestrator (phase assessment) → Next Phase Planning (if needed)
+
+### Phase Context Awareness
+**When committing, include phase context:**
+- Note which implementation phase the commit represents
+- Reference todos being completed
+- Help orchestrator understand current progress state
+
+You ensure **automated progression** after successful git operations while maintaining **commit quality** - never compromise git history, but always hand off to orchestrator upon successful completion.

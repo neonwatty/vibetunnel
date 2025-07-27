@@ -268,71 +268,130 @@ claude mcp add -s project playwright -- npx -y @playwright/mcp@latest
 
 ## Agent Usage for VibeTunnel Development
 
-VibeTunnel uses specialized agents to handle different aspects of development. The main coordinator will automatically delegate to these agents based on the task type.
+VibeTunnel uses specialized agents to handle different aspects of development with **automatic handoffs** that eliminate the need for manual intervention between tasks.
 
 ### Available Agents and Their Triggers
 
 1. **vt-orchestrator** - Project management and coordination
-   - Triggers: "plan", "implement feature", "coordinate", "break down task"
-   - Use for: Planning features, managing implementation progress
+   - Triggers: "plan", "implement feature", "coordinate", "break down task", "next", "continue", "what's next"
+   - Auto-triggered when: All current phase todos complete, after successful git commits, when specialists finish
+   - Use for: Planning features, managing implementation progress, automatic phase advancement
 
 2. **ts-specialist** - TypeScript/Web implementation
    - Triggers: "web", "typescript", "lit component", "websocket", "terminal", "client"
    - Auto-assigned for: Files in `web/src/`, WebSocket protocols, Lit components
+   - Auto-handoff: Completed implementation → code-review-specialist
 
 3. **swift-specialist** - Swift/macOS implementation  
    - Triggers: "swift", "macos", "ios", "native", "menu bar", "ServerManager"
    - Auto-assigned for: Files in `mac/`, `ios/`, Swift concurrency issues
+   - Auto-handoff: Completed implementation → code-review-specialist
 
 4. **debug-specialist** - Systematic debugging
    - Triggers: "error", "debug", "fix", "investigate", "not working", "failing test"
    - Auto-assigned for: Build failures, test failures, runtime errors
+   - Auto-handoff: Issue resolved → appropriate implementation specialist OR back to orchestrator
 
 5. **code-review-specialist** - Code quality review
    - Triggers: "review", "check code", "security", "performance", "best practices"
-   - Auto-assigned after: Significant implementations, before commits
+   - Auto-assigned after: Any specialist completes implementation
+   - Auto-handoff: Review passed → git-auto-commit OR Review failed → back to implementation specialist
 
 6. **git-auto-commit** - Automated git operations
    - Triggers: "commit", "push", "c+p", "/cp"
-   - Auto-assigned when: Code is tested and ready for version control
+   - Auto-assigned after: Code review passes
+   - Auto-handoff: Successful commit → vt-orchestrator (phase assessment)
+
+### Automatic Agent Triggering Rules
+
+**Phase Completion Triggers:**
+- When all high-priority todos in current phase = "completed" → **Auto-trigger vt-orchestrator**
+- When user says "next", "continue", "what's next" → **Auto-trigger vt-orchestrator**
+- After successful git commit and push → **Auto-trigger vt-orchestrator for phase assessment**
+
+**Implementation Workflow (Fully Automated):**
+```
+User Request → vt-orchestrator → [ts/swift]-specialist → code-review-specialist → git-auto-commit → vt-orchestrator (next phase)
+```
+
+**Error Recovery Workflow:**
+```
+Error Detected → debug-specialist → implementation specialist → code-review-specialist → git-auto-commit → vt-orchestrator
+```
+
+**Quality Gate Enforcement:**
+- **Never skip code review** - all implementations automatically route through code-review-specialist
+- **Never manually commit** - all approved code automatically routes through git-auto-commit
+- **Never leave tasks hanging** - all agents automatically hand off to next appropriate agent
 
 ### Agent Assignment Rules
 
-The main Claude will automatically use agents when:
-- File paths match agent expertise (e.g., `web/` → ts-specialist)
-- Keywords trigger specific agents (e.g., "error" → debug-specialist)
-- Task sequences require coordination (→ vt-orchestrator)
-- Implementation is complete (→ code-review-specialist → git-auto-commit)
+**Automatic triggers without user intervention:**
+- Implementation complete → code-review-specialist (mandatory)
+- Code review passed → git-auto-commit (automatic)
+- Git commit successful → vt-orchestrator phase assessment (automatic)
+- Phase 100% complete → vt-orchestrator next phase planning (automatic)
+- Errors encountered → debug-specialist (automatic)
+- Debug resolution → appropriate implementation specialist (automatic)
+
+**User still controls:**
+- Initial feature requests and architectural decisions
+- Stopping/pausing automation when desired
+- Major design direction changes
+- External dependency decisions
+
+The system is designed for **continuous autonomous progress** with minimal user intervention required.
 
 ## Common Workflows with Agents
 
-### Implementing a New Feature
+### Implementing a New Feature (Fully Automated)
 1. User: "Implement [feature description]"
-2. Main Claude → vt-orchestrator (automatically for planning)
-3. vt-orchestrator → ts-specialist/swift-specialist (based on stack)
-4. After implementation → code-review-specialist (automatic)
-5. After review → git-auto-commit (when requested)
+2. **Auto-trigger**: vt-orchestrator (planning and task breakdown)
+3. **Auto-handoff**: vt-orchestrator → ts-specialist/swift-specialist (based on stack)
+4. **Auto-handoff**: implementation complete → code-review-specialist
+5. **Auto-handoff**: review passed → git-auto-commit
+6. **Auto-handoff**: commit successful → vt-orchestrator (phase assessment)
+7. **Auto-continue**: If phase complete → next phase planning
 
-### Debugging Issues
+### Debugging Issues (Fully Automated)
 1. User: "Fix [error description]" or "Tests are failing"
-2. Main Claude → debug-specialist (automatically)
-3. debug-specialist → ts/swift-specialist (for fixes)
-4. After fix → code-review-specialist → git-auto-commit
+2. **Auto-trigger**: debug-specialist
+3. **Auto-handoff**: issue resolved → ts/swift-specialist (for implementation)
+4. **Auto-handoff**: fix implemented → code-review-specialist
+5. **Auto-handoff**: review passed → git-auto-commit
+6. **Auto-handoff**: commit successful → vt-orchestrator (continue workflow)
 
-### Cross-Stack Changes
+### Cross-Stack Changes (Coordinated Automation)
 1. User: "Add [feature] that needs both web and native"
-2. Main Claude → vt-orchestrator (for coordination)
-3. vt-orchestrator → both specialists in parallel
-4. After both complete → code-review-specialist
-5. Final → git-auto-commit
+2. **Auto-trigger**: vt-orchestrator (coordination planning)
+3. **Auto-delegate**: vt-orchestrator → both specialists (parallel or sequential)
+4. **Auto-handoff**: each completion → code-review-specialist
+5. **Auto-handoff**: all reviews passed → git-auto-commit
+6. **Auto-handoff**: commit successful → vt-orchestrator (next phase assessment)
 
-### Quick Patterns
-- "error" / "failing" / "broken" → debug-specialist
-- "implement" / "create" / "add" → vt-orchestrator → specialists
-- "review my changes" → code-review-specialist
-- "commit" / "push" → git-auto-commit
-- Files in `web/` → ts-specialist
-- Files in `mac/` or `ios/` → swift-specialist
+### Phase Progression (Automatic)
+1. **Phase N implementation** completes (all high-priority todos = "completed")
+2. **Auto-trigger**: vt-orchestrator for phase assessment
+3. **Auto-planning**: vt-orchestrator creates Phase N+1 todo list
+4. **Auto-delegation**: vt-orchestrator → appropriate specialists for Phase N+1
+5. **Continuous loop**: Each task follows automatic handoff chain
+
+### User Intervention Points
+**You only need to intervene for:**
+- "stop" / "pause" → Halts automation
+- Architectural decisions → Consult user before major changes
+- External dependencies → Ask user about new packages/services
+- Feature direction changes → Clarify requirements with user
+
+### Quick Trigger Patterns
+- **"next" / "continue" / "what's next"** → Auto-trigger vt-orchestrator
+- **"error" / "failing" / "broken"** → Auto-trigger debug-specialist  
+- **All phase todos complete** → Auto-trigger vt-orchestrator
+- **Implementation finished** → Auto-trigger code-review-specialist
+- **Review passed** → Auto-trigger git-auto-commit
+- **Commit successful** → Auto-trigger vt-orchestrator
+
+The system is designed for **continuous progress** - once you start a feature, it will automatically progress through implementation, review, commit, and phase advancement without requiring your intervention.
 
 ## Alternative Tools for Complex Tasks
 

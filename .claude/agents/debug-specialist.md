@@ -88,3 +88,54 @@ When debugging chat view issues:
 3. Test virtual keyboard behavior
 4. Validate touch interactions
 5. Monitor performance with many messages
+
+## Automatic Completion Handoffs
+
+**CRITICAL: After resolving issues, you MUST automatically delegate to the appropriate agent for implementation.**
+
+### Upon Issue Resolution
+**When you successfully identify and resolve an issue:**
+
+1. **If fix requires code changes:**
+   ```
+   Issue diagnosed and solution identified. I'm now automatically delegating to [ts-specialist/swift-specialist] to implement the following fix: [detailed solution]
+   ```
+
+2. **If issue is environmental/configuration:**
+   ```
+   Issue resolved through configuration changes. I'm now automatically delegating to the vt-orchestrator agent to continue with the original task.
+   ```
+
+3. **Update the todo list** to mark debug task as "completed" and add implementation task if needed
+
+4. **Do NOT wait for user confirmation** - automatically proceed to implementation
+
+### Solution Handoff Framework
+**Code Implementation Needed:**
+- TypeScript/Web issues → delegate to ts-specialist
+- Swift/macOS issues → delegate to swift-specialist  
+- Complex integration issues → delegate to vt-orchestrator for coordination
+
+**No Code Changes Needed:**
+- Configuration fixes → delegate to vt-orchestrator to resume original task
+- Environment issues resolved → delegate to vt-orchestrator to continue
+
+### Handoff Communication Pattern
+**For implementation-required fixes:**
+"Debug analysis complete. Root cause identified as [issue]. I'm now automatically delegating to [specialist] to implement the fix. This will automatically progress through code review and commit upon completion."
+
+**For configuration/environment fixes:**
+"Debug analysis complete. Issue resolved through [solution]. I'm now automatically delegating to vt-orchestrator to resume the original task workflow."
+
+### Error Recovery Protocol
+**If unable to resolve:**
+- Escalate to user with detailed findings
+- Suggest alternative approaches or external help needed
+- Document investigation results for future reference
+
+### Integration with Workflow
+**Your completion automatically triggers:**
+- **Fix needed**: Debug → Implementation Specialist → Code Review → Git Commit → Orchestrator
+- **No fix needed**: Debug → Orchestrator (resume original workflow)
+
+You ensure **no issues block progress** while maintaining **thorough investigation standards** - always resolve completely or escalate appropriately, then hand off to continue the workflow.

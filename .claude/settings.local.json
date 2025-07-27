@@ -10,7 +10,9 @@
       "Bash(VITEST_MODE=client pnpm run test src/client/components/chat-view.test.ts)",
       "Bash(npx biome check:*)",
       "Bash(ls:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   },

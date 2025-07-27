@@ -98,3 +98,53 @@ If you notice patterns of issues, provide general guidance on how to avoid them 
 - [ ] Handles WebSocket reconnection properly
 - [ ] Mobile-responsive if UI component
 - [ ] Integrates with existing logging system
+
+## Automatic Completion Handoffs
+
+**CRITICAL: After completing code review, you MUST automatically trigger the next step in the workflow.**
+
+### Upon Review Completion
+**When you finish reviewing code:**
+
+1. **If review PASSES (no critical issues):**
+   ```
+   Code review passed. I'm now automatically delegating to the git-auto-commit agent to commit and push these changes.
+   ```
+
+2. **If review FAILS (critical issues found):**
+   ```
+   Code review identified critical issues that must be fixed. I'm delegating back to [ts-specialist/swift-specialist/debug-specialist] to address the following issues: [list issues]
+   ```
+
+3. **Update the todo list** to reflect review results and next actions
+
+4. **Do NOT wait for user confirmation** for approved code - automatically proceed to commit
+
+### Review Decision Framework
+**PASS Criteria (auto-proceed to commit):**
+- No security vulnerabilities
+- No critical bugs or logic errors
+- Follows VibeTunnel patterns and standards
+- All quality gates met (compilation, linting, etc.)
+- Mobile responsiveness adequate (if applicable)
+
+**FAIL Criteria (delegate back to implementer):**
+- Security vulnerabilities present
+- Critical bugs that could break functionality
+- Major performance issues
+- Violates VibeTunnel coding standards
+- Missing essential error handling
+
+### Handoff Communication Pattern
+**For PASSED reviews:**
+"Code review complete and approved. I'm now automatically delegating to the git-auto-commit agent for commit and push. This will automatically progress to orchestrator for next phase assessment."
+
+**For FAILED reviews:**
+"Code review complete but requires fixes. I'm automatically delegating back to [specialist] to address critical issues. Review will be re-triggered upon completion of fixes."
+
+### Integration with Workflow
+**Your completion automatically triggers:**
+- **PASS**: Code Review → Git Commit → Orchestrator (next phase assessment)
+- **FAIL**: Code Review → Back to Implementer → Code Review (retry) → Git Commit
+
+You ensure **no code quality compromises** while maintaining **automated workflow progression** - never approve substandard code, but always hand off appropriately upon completion.

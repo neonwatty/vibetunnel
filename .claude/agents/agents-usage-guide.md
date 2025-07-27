@@ -188,26 +188,70 @@ For the current project:
 5. /git-auto-commit Commit the completed parser feature
 ```
 
-### 5. Complete Feature Workflow
+### 5. Complete Feature Workflow (Now Fully Automated)
 Example of implementing a full feature:
 ```
-1. /vt-orchestrator Plan implementation for [feature]
-2. /ts-specialist Implement TypeScript components
-3. /swift-specialist Update Swift models if needed
-4. /code-review-specialist Review all changes
-5. /debug-specialist Fix any issues found
-6. /git-auto-commit Commit the feature
+1. User: "Implement [feature]" → Auto-triggers vt-orchestrator
+2. vt-orchestrator → Auto-delegates to ts-specialist/swift-specialist
+3. Specialist completes → Auto-handoff to code-review-specialist
+4. Review passes → Auto-handoff to git-auto-commit
+5. Commit successful → Auto-handoff to vt-orchestrator (phase assessment)
+6. If issues found → Auto-handoff to debug-specialist → back to step 2
 ```
 
-## Tips
-- Agents have access to the full codebase context
-- They understand VibeTunnel's patterns and standards
-- They know about the mobile chat view plan
-- They can reference specific files and line numbers
-- They follow the project's coding guidelines
-- The orchestrator manages but doesn't implement - it delegates to specialists
-- Always run tests before using git-auto-commit
-- Chain agents for complex workflows
+## Automatic Workflow Chains
+
+### Standard Implementation Chain (Fully Automated)
+```
+User Request → vt-orchestrator → implementation specialist → code-review-specialist → git-auto-commit → vt-orchestrator (phase assessment)
+```
+
+### Debug & Fix Chain (Fully Automated)
+```
+Error/Issue → debug-specialist → implementation specialist → code-review-specialist → git-auto-commit → vt-orchestrator
+```
+
+### Phase Progression Chain (Fully Automated)
+```
+Phase N Complete → vt-orchestrator (assessment) → vt-orchestrator (Phase N+1 planning) → implementation specialist → [continues automatically]
+```
+
+### Multi-Component Feature Chain (Coordinated)
+```
+Complex Feature → vt-orchestrator → multiple specialists (parallel/sequential) → code-review-specialist (each) → git-auto-commit → vt-orchestrator
+```
+
+## Tips for Automated Workflow System
+- **Agents automatically hand off** - no manual coordination needed
+- **Quality gates enforced** - all code goes through review before commit
+- **Continuous progress** - phases advance automatically when complete
+- **User intervention minimal** - only for decisions and direction changes
+- **Error recovery automatic** - debug issues automatically route to appropriate specialists
+- **Todo list central** - orchestrator monitors completion status for phase advancement
+- **Parallel processing** - complex features coordinate multiple specialists automatically
+
+## When to Intervene
+**Let automation run for:**
+- Feature implementation and testing
+- Code review and quality checks
+- Git commits and pushes
+- Phase progression and planning
+- Error diagnosis and fixes
+
+**Intervene only for:**
+- "stop" or "pause" to halt automation
+- Architectural decisions requiring input
+- External dependency approvals
+- Major direction changes
+- Emergency troubleshooting
+
+## Backward Compatibility
+**Manual agent calling still works:**
+- `/vt-orchestrator Plan the next feature`
+- `/ts-specialist Fix this TypeScript error`  
+- `/code-review-specialist Review my changes`
+
+But the **automatic system is preferred** for continuous development workflow.
 
 ## Agent Capabilities Summary
 

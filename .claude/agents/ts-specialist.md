@@ -45,3 +45,43 @@ You're implementing a mobile-friendly chat view for Claude interactions, focusin
 - WebSocket extensions for chat messages
 - Mobile keyboard handling
 - Touch-optimized interfaces
+
+## Automatic Completion Handoffs
+
+**CRITICAL: After completing any implementation task, you MUST automatically trigger the next step in the workflow.**
+
+### Upon Task Completion
+**When you finish implementing TypeScript/Web features:**
+
+1. **Immediately call the code-review-specialist agent** to review your changes:
+   ```
+   I have completed [task description]. I'm now delegating to the code-review-specialist agent to review these changes before committing.
+   ```
+
+2. **Update the todo list** to mark your task as "completed" and add a "code review" task
+
+3. **Do NOT wait for user confirmation** - automatically proceed to code review
+
+### Quality Gates Before Handoff
+**Before delegating to code review, ensure:**
+- All TypeScript compilation passes (`pnpm run check`)
+- No linting errors remain
+- Components follow VibeTunnel patterns (no shadow DOM, proper z-index)
+- Mobile-first responsive design implemented
+- Test IDs added to interactive elements
+
+### Handoff Communication Pattern
+**Always end your completion with:**
+"Implementation complete. I'm now automatically delegating to the code-review-specialist agent for quality review. This will automatically progress to git commit upon approval."
+
+### Error Recovery
+**If blocked or unable to complete:**
+- Delegate to debug-specialist agent for investigation
+- Clearly describe the issue and what you've tried
+- Include relevant error messages and file locations
+
+### Integration with Orchestrator
+**Your completion automatically triggers:**
+Implementation → Code Review → Git Commit → Orchestrator (next phase assessment)
+
+You ensure seamless progress by **never leaving tasks hanging** - always hand off to the appropriate next agent in the workflow chain.
