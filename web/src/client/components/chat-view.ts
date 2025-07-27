@@ -13,9 +13,13 @@ import { html, LitElement, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import type { ChatMessage, ChatMessageType, Session } from '../../shared/types.js';
+import { authClient } from '../services/auth-client.js';
+import { chatSubscriptionService } from '../services/chat-subscription-service.js';
+import { sessionActionService } from '../services/session-action-service.js';
 import { Z_INDEX } from '../utils/constants.js';
 import { createLogger } from '../utils/logger.js';
 import { detectMobile } from '../utils/mobile-utils.js';
+import './chat-actions.js';
 import './chat-bubble.js';
 import './chat-input.js';
 
@@ -309,6 +313,107 @@ export class ChatView extends LitElement {
     this.isAutoScrollEnabled = true;
   }
 
+  private async handleStopSession() {
+    if (!this.session || this.session.status !== 'running') {
+      return;
+    }
+
+    logger.log('Stopping session', { sessionId: this.session.id });
+
+    try {
+      await sessionActionService.terminateSession(this.session, {
+        authClient,
+        callbacks: {
+          onSuccess: () => {
+            logger.log('Session stopped successfully');
+            // Navigate back to terminal view
+            this.dispatchEvent(
+              new CustomEvent('navigate-back', {
+                bubbles: true,
+                composed: true,
+              })
+            );
+          },
+          onError: (message) => {
+            logger.error('Failed to stop session:', message);
+            this.dispatchEvent(
+              new CustomEvent('error', {
+                detail: message,
+                bubbles: true,
+                composed: true,
+              })
+            );
+          },
+        },
+      });
+    } catch (error) {
+      logger.error('Error stopping session:', error);
+      this.dispatchEvent(
+        new CustomEvent('error', {
+          detail: 'Failed to stop session',
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+
+  private handleClearChat() {
+    logger.log('Clearing chat messages');
+
+    // Clear local messages
+    this.messages = [];
+    this.messageGroups = [];
+
+    // Clear cached messages in subscription service
+    if (this.sessionId) {
+      chatSubscriptionService.clearCache(this.sessionId);
+    }
+
+    // Notify user
+    logger.log('Chat cleared');
+  }
+
+  private async handleCopyAll() {
+    if (this.messages.length === 0) {
+      return;
+    }
+
+    logger.log('Copying all messages to clipboard');
+
+    try {
+      // Format messages as text
+      const text = this.messages
+        .map((msg) => {
+          const prefix =
+            msg.type === 'user' ? 'User' : msg.type === 'assistant' ? 'Assistant' : 'System';
+          const content = msg.content
+            .map((segment) => {
+              if (segment.type === 'code') {
+                return `\`\`\`${segment.language || ''}\n${segment.content}\n\`\`\``;
+              }
+              return segment.content;
+            })
+            .join('');
+          return `${prefix}: ${content}`;
+        })
+        .join('\n\n');
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(text);
+      logger.log('Messages copied to clipboard');
+    } catch (error) {
+      logger.error('Failed to copy messages:', error);
+      this.dispatchEvent(
+        new CustomEvent('error', {
+          detail: 'Failed to copy messages to clipboard',
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+
   private handleSendMessage(event: CustomEvent<string>) {
     const message = event.detail;
     if (!message || !this.sessionId) return;
@@ -458,6 +563,22 @@ export class ChatView extends LitElement {
               : ''
           }
         </div>
+
+        <!-- Chat actions (mobile only) -->
+        ${
+          this.isMobile
+            ? html`
+          <chat-actions
+            .session=${this.session}
+            .hasMessages=${this.messages.length > 0}
+            ?disabled=${!this.active || !this.ws}
+            @stop-session=${this.handleStopSession}
+            @clear-chat=${this.handleClearChat}
+            @copy-all=${this.handleCopyAll}
+          ></chat-actions>
+        `
+            : ''
+        }
 
         <!-- Chat input -->
         <chat-input
