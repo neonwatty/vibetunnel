@@ -88,6 +88,7 @@ interface ChatMessageCache {
   messages: ChatMessage[];
   lastUpdate: number;
   messageIds: Set<string>; // For fast deduplication
+  hasMoreHistory?: boolean; // Whether more messages can be loaded
 }
 
 /**
@@ -314,7 +315,14 @@ export class ChatSubscriptionService {
     }
   }
 
-  private sendMessage(message: { type: string; sessionId?: string }) {
+  private sendMessage(message: {
+    type: string;
+    sessionId?: string;
+    beforeTimestamp?: number;
+    limit?: number;
+    input?: string;
+    enableChat?: boolean;
+  }) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       // Queue message for when we reconnect
       if (message.type === 'enableChat' || message.type === 'disableChat') {
@@ -353,6 +361,10 @@ export class ChatSubscriptionService {
 
         case 'chatMessage':
           this.handleChatMessage(message.sessionId, message.message);
+          break;
+
+        case 'chatHistory':
+          this.handleChatHistory(message.sessionId, message.messages, message.hasMore);
           break;
 
         case 'ping':
@@ -426,6 +438,65 @@ export class ChatSubscriptionService {
     }
   }
 
+  private handleChatHistory(sessionId: string, messages: ChatMessage[], hasMore: boolean) {
+    try {
+      // Prepend messages to cache (they're older than existing messages)
+      const cache = this.messageCache.get(sessionId);
+      if (cache && messages.length > 0) {
+        // Deduplicate and merge
+        const newMessageIds = new Set<string>();
+        const newMessages: ChatMessage[] = [];
+
+        for (const msg of messages) {
+          if (!cache.messageIds.has(msg.id)) {
+            newMessages.push(msg);
+            newMessageIds.add(msg.id);
+          }
+        }
+
+        if (newMessages.length > 0) {
+          // Prepend new messages
+          cache.messages = [...newMessages, ...cache.messages];
+          newMessages.forEach((msg) => cache.messageIds.add(msg.id));
+          cache.lastUpdate = Date.now();
+
+          // Sort by timestamp
+          cache.messages.sort((a, b) => a.timestamp - b.timestamp);
+
+          // Trim if needed
+          if (cache.messages.length > ChatSubscriptionService.MAX_MESSAGES_PER_SESSION) {
+            const removed = cache.messages.splice(
+              0,
+              cache.messages.length - ChatSubscriptionService.MAX_MESSAGES_PER_SESSION
+            );
+            removed.forEach((msg) => cache.messageIds.delete(msg.id));
+          }
+
+          logger.debug(`Added ${newMessages.length} history messages for session ${sessionId}`);
+
+          // Notify handlers
+          const subscription = this.subscriptions.get(sessionId);
+          if (subscription) {
+            subscription.handlers.forEach((handler) => {
+              try {
+                handler(cache.messages);
+              } catch (error) {
+                logger.error('error in chat update handler', error);
+              }
+            });
+          }
+        }
+      }
+
+      // Store hasMore flag for UI
+      if (cache) {
+        cache.hasMoreHistory = hasMore;
+      }
+    } catch (error) {
+      logger.error('error handling chat history', error);
+    }
+  }
+
   private addMessageToCache(sessionId: string, message: ChatMessage) {
     let cache = this.messageCache.get(sessionId);
     if (!cache) {
@@ -437,13 +508,22 @@ export class ChatSubscriptionService {
       this.messageCache.set(sessionId, cache);
     }
 
-    // Check for duplicate message
-    if (cache.messageIds.has(message.id)) {
-      logger.debug(`Duplicate message ${message.id} for session ${sessionId}, skipping`);
+    // Check for existing message - handle updates if timestamp is newer
+    const existingIndex = cache.messages.findIndex((m) => m.id === message.id);
+    if (existingIndex !== -1) {
+      const existingMessage = cache.messages[existingIndex];
+      if (message.timestamp > existingMessage.timestamp) {
+        // Update existing message with newer content
+        cache.messages[existingIndex] = message;
+        cache.lastUpdate = Date.now();
+        logger.debug(`Updated message ${message.id} for session ${sessionId}`);
+      } else {
+        logger.debug(`Duplicate message ${message.id} for session ${sessionId}, skipping`);
+      }
       return;
     }
 
-    // Add message
+    // Add new message
     cache.messages.push(message);
     cache.messageIds.add(message.id);
     cache.lastUpdate = Date.now();
@@ -662,6 +742,108 @@ export class ChatSubscriptionService {
       handlerCount: subscription?.handlers.size ?? 0,
       messageCount: cache?.messages.length ?? 0,
     };
+  }
+
+  /**
+   * Load message history for a session
+   *
+   * Requests older messages from the server for pull-to-refresh functionality.
+   * Messages are prepended to the existing cache and handlers are notified.
+   *
+   * @param sessionId - Session to load history for
+   * @param beforeTimestamp - Load messages before this timestamp (optional)
+   * @param limit - Maximum number of messages to load (default: 50)
+   * @returns Promise that resolves with success status and hasMore flag
+   */
+  async loadMessageHistory(
+    sessionId: string,
+    beforeTimestamp?: number,
+    limit: number = 50
+  ): Promise<{ success: boolean; hasMore: boolean; error?: string }> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return { success: false, hasMore: false, error: 'Not connected' };
+    }
+
+    const cache = this.messageCache.get(sessionId);
+    if (!cache || cache.messages.length === 0) {
+      // No existing messages, can't load history
+      return { success: false, hasMore: false, error: 'No messages to load before' };
+    }
+
+    // Use the timestamp of the oldest message if not provided
+    const timestamp =
+      beforeTimestamp || (cache.messages.length > 0 ? cache.messages[0].timestamp : Date.now());
+
+    return new Promise((resolve) => {
+      // Set up one-time handler for the response
+      const handleResponse = (data: string) => {
+        try {
+          const message = JSON.parse(data);
+          if (message.type === 'chatHistory' && message.sessionId === sessionId) {
+            // Response is handled by handleChatHistory
+            resolve({
+              success: true,
+              hasMore: message.hasMore || false,
+            });
+            return true; // Remove this handler
+          } else if (message.type === 'error' && message.sessionId === sessionId) {
+            resolve({
+              success: false,
+              hasMore: false,
+              error: message.message,
+            });
+            return true; // Remove this handler
+          }
+        } catch {
+          // Not our message, ignore
+        }
+        return false; // Keep this handler
+      };
+
+      // Temporary message handler
+      if (!this.ws) return;
+      const originalOnMessage = this.ws.onmessage;
+      const handlers: ((data: string) => boolean)[] = [handleResponse];
+
+      this.ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          // Check temporary handlers first
+          handlers.filter((handler) => !handler(event.data));
+        }
+        // Call original handler
+        if (originalOnMessage && this.ws) {
+          originalOnMessage.call(this.ws, event);
+        }
+      };
+
+      // Send request
+      this.sendMessage({
+        type: 'loadChatHistory',
+        sessionId,
+        beforeTimestamp: timestamp,
+        limit,
+      });
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        resolve({
+          success: false,
+          hasMore: false,
+          error: 'Request timed out',
+        });
+      }, 5000);
+    });
+  }
+
+  /**
+   * Check if more history is available for a session
+   *
+   * @param sessionId - Session to check
+   * @returns Whether more history can be loaded
+   */
+  hasMoreHistory(sessionId: string): boolean {
+    const cache = this.messageCache.get(sessionId);
+    return cache ? cache.hasMoreHistory !== false : true;
   }
 
   /**

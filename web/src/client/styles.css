@@ -2098,3 +2098,169 @@ body.initial-session-load .session-flex-responsive > session-card:nth-child(n + 
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Pull to Refresh Styles */
+@layer components {
+  /* Pull to refresh container */
+  .pull-to-refresh-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Pull to refresh indicator */
+  .pull-to-refresh-indicator {
+    transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    will-change: transform, opacity;
+    
+    /* CSS custom properties for performance */
+    opacity: var(--pull-opacity, 0);
+    transform: scale(var(--pull-scale, 0.8)) translateY(var(--pull-translate-y, -40px));
+  }
+
+  /* Pull to refresh arrow rotation */
+  .pull-to-refresh-arrow {
+    transition: transform 0.2s ease-out;
+    transform-origin: center;
+    transform: rotate(var(--pull-rotation, 0deg));
+  }
+
+  /* Pull to refresh custom properties support */
+  pull-to-refresh {
+    --pull-opacity: 0;
+    --pull-scale: 0.8;
+    --pull-rotation: 0deg;
+    --pull-translate-y: -40px;
+    --error-shake: 0;
+  }
+
+  /* Pull to refresh states */
+  .pull-to-refresh-idle {
+    opacity: 0;
+    transform: scale(0.8) translateY(-40px);
+  }
+
+  .pull-to-refresh-pulling {
+    opacity: 1;
+  }
+
+  .pull-to-refresh-releasing {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  .pull-to-refresh-refreshing {
+    opacity: 1;
+  }
+
+  .pull-to-refresh-complete {
+    opacity: 1;
+    animation: pullToRefreshSuccess 0.6s ease-out;
+  }
+
+  .pull-to-refresh-error {
+    opacity: 1;
+    animation: pullToRefreshError 0.6s ease-out;
+  }
+
+  /* Success animation */
+  @keyframes pullToRefreshSuccess {
+    0% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.2);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  /* Error animation - improved shake */
+  @keyframes pullToRefreshError {
+    0%, 100% {
+      transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+      transform: translateX(-3px) rotate(-1deg);
+    }
+    20%, 40%, 60%, 80% {
+      transform: translateX(3px) rotate(1deg);
+    }
+  }
+
+  /* Shake animation for error states */
+  @keyframes shake {
+    0%, 100% {
+      transform: translateX(0) scale(1);
+    }
+    10%, 30%, 50%, 70%, 90% {
+      transform: translateX(-4px) scale(1.02);
+    }
+    20%, 40%, 60%, 80% {
+      transform: translateX(4px) scale(1.02);
+    }
+  }
+
+  /* Animate shake utility class */
+  .animate-shake {
+    animation: shake 0.6s ease-in-out;
+  }
+
+  /* Error shake animation class */
+  @keyframes errorShake {
+    0%, 100% {
+      transform: translateX(0) scale(1);
+    }
+    10%, 30%, 50%, 70%, 90% {
+      transform: translateX(-2px) scale(1.01) rotate(-0.5deg);
+    }
+    20%, 40%, 60%, 80% {
+      transform: translateX(2px) scale(1.01) rotate(0.5deg);
+    }
+  }
+
+  /* Elastic pull effect for content */
+  .pull-to-refresh-content {
+    transition: transform 0.2s ease-out;
+    will-change: transform;
+  }
+
+  /* Pull resistance visual feedback */
+  .pull-to-refresh-active {
+    transform-origin: center top;
+  }
+
+  /* Spinner animation is handled by Tailwind's animate-spin */
+  
+  /* Arrow rotation based on pull distance */
+  .pull-to-refresh-arrow {
+    transition: transform 0.2s ease-out;
+    transform-origin: center;
+  }
+
+  /* Mobile-only pull to refresh */
+  @media (hover: hover) and (pointer: fine) {
+    /* Disable pull to refresh on devices with precise pointers (desktop) */
+    .pull-to-refresh-container {
+      display: none;
+    }
+  }
+
+  /* Prevent content jump during pull */
+  .chat-messages-pulling {
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  /* Smooth return animation */
+  .chat-messages-releasing {
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  }
+}

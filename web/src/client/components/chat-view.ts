@@ -23,6 +23,8 @@ import { mobileViewportManager, type ViewportState } from '../utils/mobile-viewp
 import './chat-actions.js';
 import './chat-bubble.js';
 import './chat-input.js';
+import './pull-to-refresh.js';
+import type { PullToRefreshState } from './pull-to-refresh.js';
 
 const logger = createLogger('chat-view');
 
@@ -30,11 +32,26 @@ const logger = createLogger('chat-view');
 const MESSAGE_BUFFER_SIZE = 100;
 const SCROLL_BUFFER_PIXELS = 100;
 
+// Pull-to-refresh constants
+const PULL_THRESHOLD = 80;
+const MAX_PULL_DISTANCE = 120;
+const PULL_RESISTANCE_LOW = 0.6;
+const PULL_RESISTANCE_HIGH = 0.3;
+const MIN_PULL_TO_PREVENT_SCROLL = 10;
+const REFRESH_INDICATOR_HEIGHT = 60;
+
 interface MessageGroup {
   type: ChatMessageType;
   messages: ChatMessage[];
   timestamp: number;
 }
+
+// TouchCoordinate interface for future use
+// interface TouchCoordinate {
+//   x: number;
+//   y: number;
+//   timestamp: number;
+// }
 
 @customElement('chat-view')
 export class ChatView extends LitElement {
@@ -55,10 +72,12 @@ export class ChatView extends LitElement {
   @state() private visibleEndIndex = 50;
   @state() private keyboardHeight = 0;
   @state() private isKeyboardVisible = false;
+  @state() private pullToRefreshState: PullToRefreshState = 'idle';
+  @state() private pullDistance = 0;
+  @state() private hasMoreHistory = true;
 
   private ws: WebSocket | null = null;
   private scrollContainer: HTMLElement | null = null;
-  private intersectionObserver: IntersectionObserver | null = null;
   private isMobile = detectMobile();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -66,13 +85,18 @@ export class ChatView extends LitElement {
   private lastScrollTop = 0;
   private viewportResizeTimeout: number | null = null;
   private viewportUnsubscribe?: () => void;
+  private touchStartY = 0;
+  private isPulling = false;
+  private isLoadingHistory = false;
+  private touchStartHandler?: (e: TouchEvent) => void;
+  private touchMoveHandler?: (e: TouchEvent) => void;
+  private touchEndHandler?: () => void;
+  private lastTouchMoveTime = 0;
+  private touchMoveThrottle = 16; // ~60fps
 
   connectedCallback() {
     super.connectedCallback();
     logger.log('Chat view connected');
-
-    // Set up intersection observer for pull-to-refresh
-    this.setupIntersectionObserver();
 
     // Subscribe to viewport changes
     this.viewportUnsubscribe = mobileViewportManager.subscribe(this.handleViewportStateChange);
@@ -83,7 +107,7 @@ export class ChatView extends LitElement {
     logger.log('Chat view disconnected');
 
     this.cleanupWebSocket();
-    this.intersectionObserver?.disconnect();
+    this.cleanupTouchHandlers();
 
     if (this.viewportUnsubscribe) {
       this.viewportUnsubscribe();
@@ -269,30 +293,156 @@ export class ChatView extends LitElement {
     this.messageGroups = groups;
   }
 
-  private setupIntersectionObserver() {
-    this.intersectionObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.target.classList.contains('pull-to-refresh-trigger')) {
-            this.handlePullToRefresh();
-          }
-        });
-      },
-      { rootMargin: '50px' }
-    );
+  private setupTouchHandlers() {
+    if (!this.scrollContainer || !this.isMobile) return;
+
+    // Touch start - record initial position
+    this.touchStartHandler = (e: TouchEvent) => {
+      if (this.pullToRefreshState === 'refreshing' || this.isLoadingHistory) return;
+
+      this.touchStartY = e.touches[0].clientY;
+      this.isPulling = false;
+    };
+
+    // Touch move - handle pull gesture with throttling
+    this.touchMoveHandler = (e: TouchEvent) => {
+      if (this.pullToRefreshState === 'refreshing' || this.isLoadingHistory) return;
+      if (!this.hasMoreHistory) return;
+
+      // Throttle touch move events
+      const now = Date.now();
+      if (now - this.lastTouchMoveTime < this.touchMoveThrottle) return;
+      this.lastTouchMoveTime = now;
+
+      const currentY = e.touches[0].clientY;
+      const deltaY = currentY - this.touchStartY;
+
+      // Only start pulling if at top of scroll and pulling down
+      if (this.scrollContainer && this.scrollContainer.scrollTop === 0 && deltaY > 0) {
+        this.isPulling = true;
+
+        // Apply resistance factor for natural feel
+        const resistance = deltaY > PULL_THRESHOLD ? PULL_RESISTANCE_HIGH : PULL_RESISTANCE_LOW;
+        this.pullDistance = Math.min(deltaY * resistance, MAX_PULL_DISTANCE);
+
+        // Update state based on pull distance
+        if (this.pullDistance > PULL_THRESHOLD) {
+          this.pullToRefreshState = 'releasing';
+        } else {
+          this.pullToRefreshState = 'pulling';
+        }
+
+        // Prevent default scrolling while pulling
+        if (this.pullDistance > MIN_PULL_TO_PREVENT_SCROLL) {
+          e.preventDefault();
+        }
+      } else if (this.isPulling && deltaY <= 0) {
+        // User scrolled back up, cancel pull
+        this.cancelPullToRefresh();
+      }
+    };
+
+    // Touch end - trigger refresh if threshold met
+    this.touchEndHandler = async () => {
+      if (!this.isPulling) return;
+
+      if (this.pullDistance > PULL_THRESHOLD && this.pullToRefreshState === 'releasing') {
+        // Trigger refresh
+        this.pullToRefreshState = 'refreshing';
+        this.pullDistance = REFRESH_INDICATOR_HEIGHT; // Keep indicator visible during refresh
+
+        await this.loadMessageHistory();
+      } else {
+        // Cancel pull
+        this.cancelPullToRefresh();
+      }
+    };
+
+    // Add event listeners
+    this.scrollContainer.addEventListener('touchstart', this.touchStartHandler, { passive: true });
+    this.scrollContainer.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
+    this.scrollContainer.addEventListener('touchend', this.touchEndHandler);
   }
 
-  private handlePullToRefresh() {
-    if (this.isLoading) return;
+  private cleanupTouchHandlers() {
+    if (!this.scrollContainer) return;
 
-    logger.log('Pull to refresh triggered');
-    this.isLoading = true;
+    if (this.touchStartHandler) {
+      this.scrollContainer.removeEventListener('touchstart', this.touchStartHandler);
+    }
+    if (this.touchMoveHandler) {
+      this.scrollContainer.removeEventListener('touchmove', this.touchMoveHandler);
+    }
+    if (this.touchEndHandler) {
+      this.scrollContainer.removeEventListener('touchend', this.touchEndHandler);
+    }
 
-    // TODO: Implement history loading from server
-    // For now, just simulate loading
+    this.touchStartHandler = undefined;
+    this.touchMoveHandler = undefined;
+    this.touchEndHandler = undefined;
+  }
+
+  private cancelPullToRefresh() {
+    this.isPulling = false;
+    this.pullDistance = 0;
+    this.pullToRefreshState = 'idle';
+  }
+
+  private async loadMessageHistory() {
+    if (!this.sessionId || this.isLoadingHistory) return;
+
+    logger.log('Loading message history...');
+    this.isLoadingHistory = true;
+
+    try {
+      const result = await chatSubscriptionService.loadMessageHistory(this.sessionId);
+
+      if (result.success) {
+        this.hasMoreHistory = result.hasMore;
+        this.pullToRefreshState = 'complete';
+        logger.log('Message history loaded successfully');
+      } else {
+        this.pullToRefreshState = 'error';
+        logger.error('Failed to load message history:', result.error);
+
+        // Provide specific error feedback
+        const errorMessage = result.error?.includes('Not connected')
+          ? 'Connection lost. Please check your network.'
+          : result.error || 'Failed to load messages';
+
+        this.dispatchEvent(
+          new CustomEvent('error', {
+            detail: errorMessage,
+            bubbles: true,
+            composed: true,
+          })
+        );
+      }
+    } catch (error) {
+      this.pullToRefreshState = 'error';
+      logger.error('Error loading message history:', error);
+
+      // Network error handling
+      const isNetworkError = error instanceof TypeError && error.message.includes('fetch');
+      const errorMessage = isNetworkError
+        ? 'Network error. Please check your connection.'
+        : 'Failed to load message history';
+
+      this.dispatchEvent(
+        new CustomEvent('error', {
+          detail: errorMessage,
+          bubbles: true,
+          composed: true,
+        })
+      );
+    } finally {
+      this.isLoadingHistory = false;
+    }
+
+    // Reset after animation completes
     setTimeout(() => {
-      this.isLoading = false;
-    }, 1000);
+      this.cancelPullToRefresh();
+    }, 800);
   }
 
   private handleScroll(event: Event) {
@@ -604,7 +754,7 @@ export class ChatView extends LitElement {
         <div 
           class="flex-1 overflow-y-auto px-4 py-4 ${
             this.isMobile ? 'overscroll-behavior-contain' : ''
-          }"
+          } relative"
           @scroll=${this.handleScroll}
           id="scroll-container"
           style="${
@@ -613,15 +763,20 @@ export class ChatView extends LitElement {
               : ''
           }"
         >
-          <!-- Pull to refresh trigger -->
-          <div class="pull-to-refresh-trigger h-1"></div>
-          
+          <!-- Pull to refresh indicator -->
           ${
-            this.isLoading
+            this.isMobile
               ? html`
-            <div class="text-center py-4">
-              <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-            </div>
+            <pull-to-refresh
+              .state=${this.pullToRefreshState}
+              .pullDistance=${this.pullDistance}
+              .isRefreshing=${this.pullToRefreshState === 'refreshing'}
+              @refresh-triggered=${this.loadMessageHistory}
+              @refresh-complete=${this.cancelPullToRefresh}
+              role="status"
+              aria-live="polite"
+              aria-label="Pull to refresh messages"
+            ></pull-to-refresh>
           `
               : ''
           }
@@ -702,12 +857,14 @@ export class ChatView extends LitElement {
   firstUpdated() {
     this.scrollContainer = this.querySelector('#scroll-container') as HTMLElement;
 
-    // Set up intersection observer
-    if (this.intersectionObserver && this.scrollContainer) {
-      const trigger = this.querySelector('.pull-to-refresh-trigger');
-      if (trigger) {
-        this.intersectionObserver.observe(trigger);
-      }
+    // Set up touch handlers for pull to refresh
+    if (this.isMobile) {
+      this.setupTouchHandlers();
+    }
+
+    // Check if we have history available
+    if (this.sessionId) {
+      this.hasMoreHistory = chatSubscriptionService.hasMoreHistory(this.sessionId);
     }
   }
 }
