@@ -22,6 +22,7 @@ import './worktree-manager.js';
 import { authClient } from '../services/auth-client.js';
 import { GitService } from '../services/git-service.js';
 import { createLogger } from '../utils/logger.js';
+import { detectMobile } from '../utils/mobile-utils.js';
 import type { TerminalThemeId } from '../utils/terminal-themes.js';
 // Manager imports
 import { ConnectionManager } from './session-view/connection-manager.js';
@@ -50,6 +51,7 @@ import { STORAGE_KEY } from './settings.js';
 // Components
 import './session-view/terminal-renderer.js';
 import './session-view/overlays-container.js';
+import './chat-view.js';
 import type { Terminal } from './terminal.js';
 import type { VibeTerminalBinary } from './vibe-terminal-binary.js';
 
@@ -75,6 +77,10 @@ export class SessionView extends LitElement {
   @property({ type: Boolean }) sidebarCollapsed = false;
   @property({ type: Boolean }) disableFocusManagement = false;
   @property({ type: Boolean }) keyboardCaptureActive = true;
+
+  // View state
+  private currentView: 'terminal' | 'chat' = 'terminal';
+  private isMobile = detectMobile();
 
   // Managers
   private connectionManager!: ConnectionManager;
@@ -584,6 +590,11 @@ export class SessionView extends LitElement {
         logger.log('Session data now available, initializing terminal');
         this.ensureTerminalInitialized();
       }
+
+      // Load view preference when session changes
+      if (this.session && (!oldSession || oldSession.id !== this.session.id)) {
+        this.loadViewPreference();
+      }
     }
 
     // Stop loading and ensure terminal is initialized when session becomes available
@@ -718,6 +729,71 @@ export class SessionView extends LitElement {
         composed: true,
       })
     );
+  }
+
+  private handleViewToggle() {
+    // Toggle between terminal and chat views
+    const newView = this.currentView === 'terminal' ? 'chat' : 'terminal';
+    this.setCurrentView(newView);
+
+    // Save preference to localStorage
+    this.saveViewPreference(newView);
+
+    logger.log(`View toggled to: ${newView}`);
+  }
+
+  private setCurrentView(view: 'terminal' | 'chat') {
+    this.currentView = view;
+    this.requestUpdate();
+  }
+
+  private getDefaultView(): 'terminal' | 'chat' {
+    // Default to chat on mobile for Claude sessions, terminal otherwise
+    if (this.isMobile && this.session?.sessionType === 'claude') {
+      return 'chat';
+    }
+
+    // Check session's preferred view
+    if (this.session?.preferredView) {
+      return this.session.preferredView;
+    }
+
+    return 'terminal';
+  }
+
+  private loadViewPreference() {
+    if (!this.session) return;
+
+    try {
+      const key = `vibetunnel_view_preference_${this.session.id}`;
+      const stored = localStorage.getItem(key);
+
+      if (stored && (stored === 'terminal' || stored === 'chat')) {
+        this.currentView = stored;
+      } else {
+        // Use default view if no preference stored
+        this.currentView = this.getDefaultView();
+      }
+    } catch (error) {
+      logger.warn('Failed to load view preference', error);
+      this.currentView = this.getDefaultView();
+    }
+  }
+
+  private saveViewPreference(view: 'terminal' | 'chat') {
+    if (!this.session) return;
+
+    try {
+      const key = `vibetunnel_view_preference_${this.session.id}`;
+      localStorage.setItem(key, view);
+    } catch (error) {
+      logger.warn('Failed to save view preference', error);
+    }
+  }
+
+  private shouldShowViewToggle(): boolean {
+    // Show toggle for sessions with chat support or on mobile
+    return !!(this.session?.hasChatSupport || this.isMobile);
   }
 
   private handleSessionExit(e: Event) {
@@ -1079,7 +1155,7 @@ export class SessionView extends LitElement {
             .macAppConnected=${uiState.macAppConnected}
             .onTerminateSession=${() => this.sessionActionsHandler.handleTerminateSession()}
             .onClearSession=${() => this.sessionActionsHandler.handleClearSession()}
-            .onToggleViewMode=${() => this.sessionActionsHandler.handleToggleViewMode()}
+            .onToggleViewMode=${() => this.handleViewToggle()}
             @close-width-selector=${() => {
               this.uiStateManager.setShowWidthSelector(false);
               this.uiStateManager.setCustomWidth('');
@@ -1092,7 +1168,7 @@ export class SessionView extends LitElement {
             @select-image=${() => this.fileOperationsManager.selectImage()}
             @open-camera=${() => this.fileOperationsManager.openCamera()}
             @show-image-upload-options=${() => this.fileOperationsManager.selectImage()}
-            @toggle-view-mode=${() => this.sessionActionsHandler.handleToggleViewMode()}
+            @toggle-view-mode=${() => this.handleViewToggle()}
             @capture-toggled=${(e: CustomEvent) => {
               this.dispatchEvent(
                 new CustomEvent('capture-toggled', {
@@ -1104,6 +1180,8 @@ export class SessionView extends LitElement {
             }}
             .hasGitRepo=${!!this.session?.gitRepoPath}
             .viewMode=${uiState.viewMode}
+            .currentView=${this.currentView}
+            .showViewToggle=${this.shouldShowViewToggle()}
           >
           </session-header>
         </div>
@@ -1146,7 +1224,7 @@ export class SessionView extends LitElement {
                 }}
               ></worktree-manager>
             `
-              : uiState.viewMode === 'terminal'
+              : uiState.viewMode === 'terminal' && this.currentView === 'terminal'
                 ? html`
               <!-- Enhanced Terminal Component -->
               <terminal-renderer
@@ -1164,7 +1242,26 @@ export class SessionView extends LitElement {
                 .onTerminalReady=${this.boundHandleTerminalReady}
               ></terminal-renderer>
             `
-                : ''
+                : this.currentView === 'chat' && uiState.viewMode === 'terminal'
+                  ? html`
+              <!-- Chat View Component -->
+              <chat-view
+                .session=${this.session}
+                .sessionId=${this.session?.id || ''}
+                .active=${true}
+                @navigate-back=${() => this.setCurrentView('terminal')}
+                @error=${(e: CustomEvent) => {
+                  this.dispatchEvent(
+                    new CustomEvent('error', {
+                      detail: e.detail,
+                      bubbles: true,
+                      composed: true,
+                    })
+                  );
+                }}
+              ></chat-view>
+            `
+                  : ''
           }
         </div>
 

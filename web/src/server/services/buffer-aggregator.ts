@@ -1,5 +1,7 @@
 import chalk from 'chalk';
 import { WebSocket } from 'ws';
+import type { ChatMessage } from '../../shared/types.js';
+import type { PtyManager } from '../pty/pty-manager.js';
 import { createLogger } from '../utils/logger.js';
 import type { RemoteRegistry } from './remote-registry.js';
 import type { TerminalManager } from './terminal-manager.js';
@@ -8,6 +10,7 @@ const logger = createLogger('buffer-aggregator');
 
 interface BufferAggregatorConfig {
   terminalManager: TerminalManager;
+  ptyManager: PtyManager;
   remoteRegistry: RemoteRegistry | null;
   isHQMode: boolean;
 }
@@ -75,6 +78,7 @@ export class BufferAggregator {
   private config: BufferAggregatorConfig;
   private remoteConnections: Map<string, RemoteWebSocketConnection> = new Map();
   private clientSubscriptions: Map<WebSocket, Map<string, () => void>> = new Map();
+  private chatSubscriptions: Map<WebSocket, Map<string, () => void>> = new Map();
 
   constructor(config: BufferAggregatorConfig) {
     this.config = config;
@@ -89,8 +93,9 @@ export class BufferAggregator {
     const clientId = `client-${Date.now()}`;
     logger.debug(`Assigned client ID: ${clientId}`);
 
-    // Initialize subscription map for this client
+    // Initialize subscription maps for this client
     this.clientSubscriptions.set(ws, new Map());
+    this.chatSubscriptions.set(ws, new Map());
 
     // Send welcome message
     ws.send(JSON.stringify({ type: 'connected', version: '1.0' }));
@@ -127,7 +132,7 @@ export class BufferAggregator {
    */
   private async handleClientMessage(
     clientWs: WebSocket,
-    data: { type: string; sessionId?: string }
+    data: { type: string; sessionId?: string; enableChat?: boolean }
   ): Promise<void> {
     const subscriptions = this.clientSubscriptions.get(clientWs);
     if (!subscriptions) return;
@@ -160,6 +165,12 @@ export class BufferAggregator {
         await this.subscribeToLocalSession(clientWs, sessionId);
       }
 
+      // Handle chat subscription if requested
+      if (data.enableChat) {
+        logger.debug(`Chat mode requested for session ${sessionId}`);
+        await this.subscribeToChatMessages(clientWs, sessionId);
+      }
+
       clientWs.send(JSON.stringify({ type: 'subscribed', sessionId }));
       logger.log(chalk.green(`Client subscribed to session ${sessionId}`));
     } else if (data.type === 'unsubscribe' && data.sessionId) {
@@ -169,6 +180,17 @@ export class BufferAggregator {
         unsubscribe();
         subscriptions.delete(sessionId);
         logger.log(chalk.yellow(`Client unsubscribed from session ${sessionId}`));
+      }
+
+      // Also unsubscribe from chat messages
+      const chatSubs = this.chatSubscriptions.get(clientWs);
+      if (chatSubs) {
+        const chatUnsub = chatSubs.get(sessionId);
+        if (chatUnsub) {
+          chatUnsub();
+          chatSubs.delete(sessionId);
+          logger.debug(`Client unsubscribed from chat messages for session ${sessionId}`);
+        }
       }
 
       // Also unsubscribe from remote if applicable
@@ -191,6 +213,25 @@ export class BufferAggregator {
           }
         }
       }
+    } else if (data.type === 'enableChat' && data.sessionId) {
+      // Enable chat mode for an existing subscription
+      const sessionId = data.sessionId;
+      logger.debug(`Enabling chat mode for session ${sessionId}`);
+      await this.subscribeToChatMessages(clientWs, sessionId);
+      clientWs.send(JSON.stringify({ type: 'chatEnabled', sessionId }));
+    } else if (data.type === 'disableChat' && data.sessionId) {
+      // Disable chat mode for a session
+      const sessionId = data.sessionId;
+      const chatSubs = this.chatSubscriptions.get(clientWs);
+      if (chatSubs) {
+        const chatUnsub = chatSubs.get(sessionId);
+        if (chatUnsub) {
+          chatUnsub();
+          chatSubs.delete(sessionId);
+          logger.debug(`Chat mode disabled for session ${sessionId}`);
+        }
+      }
+      clientWs.send(JSON.stringify({ type: 'chatDisabled', sessionId }));
     } else if (data.type === 'ping') {
       clientWs.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
     }
@@ -269,6 +310,69 @@ export class BufferAggregator {
     } catch (error) {
       logger.error(`Error subscribing to local session ${sessionId}:`, error);
       clientWs.send(JSON.stringify({ type: 'error', message: 'Failed to subscribe to session' }));
+    }
+  }
+
+  /**
+   * Subscribe a client to chat messages for a session
+   */
+  private async subscribeToChatMessages(clientWs: WebSocket, sessionId: string): Promise<void> {
+    const chatSubs = this.chatSubscriptions.get(clientWs);
+    if (!chatSubs) return;
+
+    // Check if already subscribed
+    if (chatSubs.has(sessionId)) {
+      logger.debug(`Already subscribed to chat messages for session ${sessionId}`);
+      return;
+    }
+
+    try {
+      // Get the activity detector for this session
+      const activityDetector = this.config.ptyManager.getActivityDetector(sessionId);
+
+      if (!activityDetector || !activityDetector.hasChatSupport()) {
+        logger.warn(`Session ${sessionId} does not support chat messages`);
+        clientWs.send(
+          JSON.stringify({
+            type: 'error',
+            message: 'This session does not support chat view',
+            sessionId,
+          })
+        );
+        return;
+      }
+
+      // Enable chat parsing
+      activityDetector.enableChatParsing();
+
+      // Subscribe to chat messages
+      const unsubscribe = activityDetector.onChatMessage((message: ChatMessage) => {
+        try {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(
+              JSON.stringify({
+                type: 'chatMessage',
+                sessionId,
+                message,
+              })
+            );
+          }
+        } catch (error) {
+          logger.error('Error sending chat message:', error);
+        }
+      });
+
+      chatSubs.set(sessionId, unsubscribe);
+      logger.log(`Client subscribed to chat messages for session ${sessionId}`);
+    } catch (error) {
+      logger.error(`Error subscribing to chat messages for session ${sessionId}:`, error);
+      clientWs.send(
+        JSON.stringify({
+          type: 'error',
+          message: 'Failed to subscribe to chat messages',
+          sessionId,
+        })
+      );
     }
   }
 
@@ -444,6 +548,7 @@ export class BufferAggregator {
    * Handle client disconnection
    */
   private handleClientDisconnect(ws: WebSocket): void {
+    // Clean up buffer subscriptions
     const subscriptions = this.clientSubscriptions.get(ws);
     if (subscriptions) {
       const subscriptionCount = subscriptions.size;
@@ -456,6 +561,20 @@ export class BufferAggregator {
       logger.debug(`Cleaned up ${subscriptionCount} subscriptions`);
     }
     this.clientSubscriptions.delete(ws);
+
+    // Clean up chat subscriptions
+    const chatSubs = this.chatSubscriptions.get(ws);
+    if (chatSubs) {
+      const chatSubCount = chatSubs.size;
+      for (const [sessionId, unsubscribe] of chatSubs) {
+        logger.debug(`Cleaning up chat subscription for session ${sessionId}`);
+        unsubscribe();
+      }
+      chatSubs.clear();
+      logger.debug(`Cleaned up ${chatSubCount} chat subscriptions`);
+    }
+    this.chatSubscriptions.delete(ws);
+
     logger.log(chalk.yellow('Client disconnected'));
   }
 

@@ -282,6 +282,9 @@ export class PtyManager extends EventEmitter {
       logger.debug(chalk.blue(`Creating PTY session with command: ${resolvedCommand.join(' ')}`));
       logger.debug(`Working directory: ${workingDir}`);
 
+      // Detect if this is a Claude session
+      const isClaudeSession = resolvedCommand.some((arg) => arg.toLowerCase().includes('claude'));
+
       // Create initial session info with resolved command
       const sessionInfo: SessionInfo = {
         id: sessionId,
@@ -301,6 +304,10 @@ export class PtyManager extends EventEmitter {
         gitHasChanges: options.gitHasChanges,
         gitIsWorktree: options.gitIsWorktree,
         gitMainRepoPath: options.gitMainRepoPath,
+        // Add view preferences
+        sessionType: isClaudeSession ? 'claude' : 'generic',
+        hasChatSupport: isClaudeSession,
+        preferredView: isClaudeSession ? 'chat' : 'terminal', // Default to chat for Claude on mobile
       };
 
       // Save initial session info
@@ -1625,6 +1632,14 @@ export class PtyManager extends EventEmitter {
 
       return session;
     });
+  }
+
+  /**
+   * Get activity detector for a session (for chat message parsing)
+   */
+  getActivityDetector(sessionId: string): ActivityDetector | null {
+    const session = this.sessions.get(sessionId);
+    return session?.activityDetector || null;
   }
 
   /**

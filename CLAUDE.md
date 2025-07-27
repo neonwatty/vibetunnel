@@ -48,6 +48,7 @@ When the user says "release" or asks to create a release, ALWAYS read and follow
      - Mac app runs `pnpm run dev` instead of embedded server
      - Provides hot reload - web changes automatically rebuild without Mac app rebuild
      - Restart VibeTunnel server (not full rebuild) to pick up web changes
+   - **Agent**: Use **debug-specialist** if server fails to start or shows stale content
 6. **Never kill all sessions**
    - You are running inside a session yourself; killing all sessions would terminate your own process
 
@@ -83,6 +84,8 @@ When creating pull requests, use the `vt` command to update the terminal title:
 
 ## Web Development Commands
 
+**Agent Assignment**: Tasks in this section automatically trigger the **ts-specialist** agent.
+
 **DEVELOPMENT MODES**:
 - **Standalone Development**: `pnpm run dev` runs independently on port 4020
 - **Mac App Integration**: Enable "Development Server" in VibeTunnel settings (recommended)
@@ -114,6 +117,8 @@ pnpm run test:e2e
 ```
 
 ## macOS Development Commands
+
+**Agent Assignment**: Tasks in this section automatically trigger the **swift-specialist** agent.
 
 In the `mac/` directory:
 
@@ -147,6 +152,10 @@ In the `mac/` directory:
 - **Server Management**: `mac/VibeTunnel/Core/Services/ServerManager.swift`
 
 ## Testing
+
+**Agent Assignment**: 
+- Test failures → **debug-specialist**
+- Writing new tests → **ts-specialist** (web) or **swift-specialist** (mac)
 
 - **Never run tests unless explicitly asked**
 - Mac tests: Swift Testing framework in `VibeTunnelTests/`
@@ -256,6 +265,74 @@ Use `-s` or `--scope` flag to specify scope:
 ```bash
 claude mcp add -s project playwright -- npx -y @playwright/mcp@latest
 ```
+
+## Agent Usage for VibeTunnel Development
+
+VibeTunnel uses specialized agents to handle different aspects of development. The main coordinator will automatically delegate to these agents based on the task type.
+
+### Available Agents and Their Triggers
+
+1. **vt-orchestrator** - Project management and coordination
+   - Triggers: "plan", "implement feature", "coordinate", "break down task"
+   - Use for: Planning features, managing implementation progress
+
+2. **ts-specialist** - TypeScript/Web implementation
+   - Triggers: "web", "typescript", "lit component", "websocket", "terminal", "client"
+   - Auto-assigned for: Files in `web/src/`, WebSocket protocols, Lit components
+
+3. **swift-specialist** - Swift/macOS implementation  
+   - Triggers: "swift", "macos", "ios", "native", "menu bar", "ServerManager"
+   - Auto-assigned for: Files in `mac/`, `ios/`, Swift concurrency issues
+
+4. **debug-specialist** - Systematic debugging
+   - Triggers: "error", "debug", "fix", "investigate", "not working", "failing test"
+   - Auto-assigned for: Build failures, test failures, runtime errors
+
+5. **code-review-specialist** - Code quality review
+   - Triggers: "review", "check code", "security", "performance", "best practices"
+   - Auto-assigned after: Significant implementations, before commits
+
+6. **git-auto-commit** - Automated git operations
+   - Triggers: "commit", "push", "c+p", "/cp"
+   - Auto-assigned when: Code is tested and ready for version control
+
+### Agent Assignment Rules
+
+The main Claude will automatically use agents when:
+- File paths match agent expertise (e.g., `web/` → ts-specialist)
+- Keywords trigger specific agents (e.g., "error" → debug-specialist)
+- Task sequences require coordination (→ vt-orchestrator)
+- Implementation is complete (→ code-review-specialist → git-auto-commit)
+
+## Common Workflows with Agents
+
+### Implementing a New Feature
+1. User: "Implement [feature description]"
+2. Main Claude → vt-orchestrator (automatically for planning)
+3. vt-orchestrator → ts-specialist/swift-specialist (based on stack)
+4. After implementation → code-review-specialist (automatic)
+5. After review → git-auto-commit (when requested)
+
+### Debugging Issues
+1. User: "Fix [error description]" or "Tests are failing"
+2. Main Claude → debug-specialist (automatically)
+3. debug-specialist → ts/swift-specialist (for fixes)
+4. After fix → code-review-specialist → git-auto-commit
+
+### Cross-Stack Changes
+1. User: "Add [feature] that needs both web and native"
+2. Main Claude → vt-orchestrator (for coordination)
+3. vt-orchestrator → both specialists in parallel
+4. After both complete → code-review-specialist
+5. Final → git-auto-commit
+
+### Quick Patterns
+- "error" / "failing" / "broken" → debug-specialist
+- "implement" / "create" / "add" → vt-orchestrator → specialists
+- "review my changes" → code-review-specialist
+- "commit" / "push" → git-auto-commit
+- Files in `web/` → ts-specialist
+- Files in `mac/` or `ios/` → swift-specialist
 
 ## Alternative Tools for Complex Tasks
 
@@ -374,10 +451,47 @@ gh pr checks <pr-number>
 
 ## Key Files Quick Reference
 
-- Architecture Details: `docs/ARCHITECTURE.md`
-- API Specifications: `docs/spec.md`
-- Server Implementation Guide: `web/docs/spec.md`
-- Build Configuration: `web/package.json`, `mac/Package.swift`
+- Architecture Details: `docs/ARCHITECTURE.md` (vt-orchestrator for planning)
+- API Specifications: `docs/spec.md` (ts-specialist for implementation)
+- Server Implementation Guide: `web/docs/spec.md` (ts-specialist)
+- Build Configuration: `web/package.json` (ts-specialist), `mac/Package.swift` (swift-specialist)
 - External Device Testing: `docs/TESTING_EXTERNAL_DEVICES.md`
 - Gemini CLI Instructions: `docs/gemini.md`
 - Release Process: `docs/RELEASE.md`
+- When errors occur in any file → debug-specialist
+
+## Agent-Specific Context
+
+### For vt-orchestrator
+- Has access to mobile-chat-view-implementation.md plan
+- Knows current implementation phase and progress
+- Can reference todo lists and track completion
+
+### For ts-specialist  
+- Follows TypeScript strict mode (no `any` types)
+- Uses Lit decorators pattern consistently
+- Implements proper WebSocket binary protocol (0xBF)
+- Knows mobile-first responsive patterns
+
+### For swift-specialist
+- Uses Swift 6.0 strict concurrency
+- Follows VibeTunnel's actor isolation patterns
+- Knows menu bar app lifecycle
+- Understands BunServer process management
+
+### For debug-specialist
+- Knows common VibeTunnel issues (port conflicts, process crashes)
+- Has access to vtlog.sh for debugging
+- Understands dev vs prod mode differences
+- Can trace issues across Swift↔TypeScript boundary
+
+### For code-review-specialist
+- Checks VibeTunnel-specific patterns
+- Ensures mobile responsiveness
+- Validates WebSocket protocol usage
+- Verifies no `any` types in TypeScript
+
+### For git-auto-commit
+- Uses conventional commits format
+- Groups related changes appropriately
+- References issue/PR numbers when available

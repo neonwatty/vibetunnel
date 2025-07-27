@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(pnpm test:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(mv:*)",
+      "Bash(pnpm run:*)",
+      "Bash(mkdir:*)",
+      "Bash(VITEST_MODE=client pnpm run test src/test/client/components/chat-view.test.ts)",
+      "Bash(VITEST_MODE=client pnpm run test src/client/components/chat-view.test.ts)",
+      "Bash(npx biome check:*)",
+      "Bash(ls:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   },

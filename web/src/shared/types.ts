@@ -54,6 +54,10 @@ export interface SessionInfo {
   gitStagedCount?: number; // Number of staged files
   gitAddedCount?: number; // Number of added files
   gitDeletedCount?: number; // Number of deleted files
+  // View preferences
+  preferredView?: 'terminal' | 'chat'; // User's preferred view for this session
+  sessionType?: 'claude' | 'generic'; // Detected session type
+  hasChatSupport?: boolean; // Whether this session supports chat view
 }
 
 /**
@@ -258,4 +262,52 @@ export interface ServerStatus {
   macAppConnected: boolean;
   isHQMode: boolean;
   version: string;
+}
+
+/**
+ * Chat message types for Claude interactions
+ */
+export enum ChatMessageType {
+  USER = 'user',
+  ASSISTANT = 'assistant',
+  SYSTEM = 'system',
+  ERROR = 'error',
+  THINKING = 'thinking',
+}
+
+/**
+ * Message content segment types
+ */
+export enum ContentSegmentType {
+  TEXT = 'text',
+  CODE = 'code',
+  THINKING = 'thinking',
+}
+
+/**
+ * A segment of message content
+ */
+export interface ContentSegment {
+  type: ContentSegmentType;
+  content: string;
+  language?: string; // For code blocks
+  collapsed?: boolean; // For thinking blocks
+}
+
+/**
+ * Structured chat message
+ */
+export interface ChatMessage {
+  id: string;
+  type: ChatMessageType;
+  content: ContentSegment[];
+  timestamp: number;
+  raw?: string; // Original raw content
+  metadata?: {
+    sessionId?: string;
+    isComplete?: boolean;
+    isStreaming?: boolean;
+    tokenCount?: number;
+    duration?: number;
+  };
 }

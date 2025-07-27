@@ -531,6 +531,7 @@ export async function createApp(): Promise<AppInstance> {
   // Initialize buffer aggregator
   bufferAggregator = new BufferAggregator({
     terminalManager,
+    ptyManager,
     remoteRegistry,
     isHQMode: config.isHQMode,
   });

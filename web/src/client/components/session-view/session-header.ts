@@ -57,6 +57,8 @@ export class SessionHeader extends LitElement {
   @property({ type: Boolean }) hasGitRepo = false;
   @property({ type: String }) viewMode: 'terminal' | 'worktree' = 'terminal';
   @property({ type: Function }) onToggleViewMode?: () => void;
+  @property({ type: String }) currentView: 'terminal' | 'chat' = 'terminal';
+  @property({ type: Boolean }) showViewToggle = false;
   @state() private isHovered = false;
   @state() private useCompactMenu = false;
   private resizeObserver?: ResizeObserver;
@@ -339,6 +341,37 @@ export class SessionHeader extends LitElement {
               `
               : ''
           }
+          
+          <!-- Terminal/Chat view toggle button (visible when chat is supported) -->
+          ${
+            this.showViewToggle
+              ? html`
+                <button
+                  class="bg-bg-tertiary border border-border rounded-md p-2 text-primary transition-all duration-200 hover:bg-surface-hover hover:border-primary flex-shrink-0"
+                  @click=${() => this.onToggleViewMode?.()}
+                  title="${this.currentView === 'terminal' ? 'Switch to Chat View' : 'Switch to Terminal View'}"
+                  data-testid="view-toggle-button"
+                >
+                  ${
+                    this.currentView === 'terminal'
+                      ? html`
+                      <!-- Chat icon -->
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2.678 11.894a1 1 0 0 1 .287.801 10.97 10.97 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8.06 8.06 0 0 0 8 14c3.996 0 7-2.807 7-6 0-3.192-3.004-6-7-6S1 4.808 1 8c0 1.468.617 2.83 1.678 3.894zm-.493 3.905a21.682 21.682 0 0 1-.713.129c-.2.032-.352-.176-.273-.362a9.68 9.68 0 0 0 .244-.637l.003-.01c.248-.72.45-1.548.524-2.319C.743 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9.06 9.06 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105z"/>
+                      </svg>
+                    `
+                      : html`
+                      <!-- Terminal icon -->
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M0 2a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V2zm9.5 5.5h-3a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1zm-6.354-.354a.5.5 0 1 0 .708.708l2-2a.5.5 0 0 0 0-.708l-2-2a.5.5 0 1 0-.708.708L4.793 5.5 3.146 7.146z"/>
+                      </svg>
+                    `
+                  }
+                </button>
+              `
+              : ''
+          }
+          
           <!-- Keyboard capture indicator (always visible) -->
           <keyboard-capture-indicator
             .active=${this.keyboardCaptureActive}

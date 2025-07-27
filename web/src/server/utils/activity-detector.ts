@@ -5,6 +5,8 @@
  * for enhanced terminal title updates in dynamic mode.
  */
 
+import type { ChatMessage } from '../../shared/types.js';
+import { ChatMessageParser } from '../services/chat-message-parser.js';
 import { createLogger } from './logger.js';
 import { getClaudeCommandFromTree, isClaudeInProcessTree } from './process-tree.js';
 import { PromptDetector } from './prompt-patterns.js';
@@ -31,6 +33,14 @@ const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+// Re-export chat message types for convenience
+export type {
+  ChatMessage,
+  ChatMessageType,
+  ContentSegment,
+  ContentSegmentType,
+} from '../../shared/types.js';
 
 /**
  * Activity status returned by app-specific parsers
@@ -256,6 +266,11 @@ export class ActivityDetector {
   private readonly STATUS_TIMEOUT = 10000; // 10 seconds - clear status if not seen
   private readonly MEANINGFUL_OUTPUT_THRESHOLD = 5; // characters
 
+  // Chat message parsing for Claude sessions
+  private chatParser: ChatMessageParser | null = null;
+  private chatMessageHandlers: Set<(message: ChatMessage) => void> = new Set();
+  private isChatParsingEnabled = false;
+
   constructor(command: string[]) {
     // Find matching detector for this command
     this.detector = detectors.find((d) => d.detect(command)) || null;
@@ -264,6 +279,21 @@ export class ActivityDetector {
       logger.log(
         `ActivityDetector: Using ${this.detector.name} detector for command: ${command.join(' ')}`
       );
+
+      // Initialize chat parser for Claude sessions
+      if (this.detector.name === 'claude') {
+        this.chatParser = new ChatMessageParser();
+        this.chatParser.onMessage((message) => {
+          this.chatMessageHandlers.forEach((handler) => {
+            try {
+              handler(message);
+            } catch (error) {
+              logger.error('Error in chat message handler:', error);
+            }
+          });
+        });
+        logger.debug('Chat parser initialized for Claude session');
+      }
     } else {
       logger.debug(
         `ActivityDetector: No specific detector found for command: ${command.join(' ')}`
@@ -295,6 +325,15 @@ export class ActivityDetector {
     // Log when we process output with a detector
     if (this.detector && data.length > 10) {
       superDebug(`Processing output with ${this.detector.name} detector (${data.length} chars)`);
+    }
+
+    // Parse chat messages if enabled
+    if (this.isChatParsingEnabled && this.chatParser) {
+      try {
+        this.chatParser.parseChunk(data);
+      } catch (error) {
+        logger.error('Error parsing chat messages:', error);
+      }
     }
 
     // Try app-specific detection first
@@ -364,6 +403,44 @@ export class ActivityDetector {
    */
   clearStatus(): void {
     this.currentStatus = null;
+
+    // Also reset chat parser
+    if (this.chatParser) {
+      this.chatParser.reset();
+    }
+  }
+
+  /**
+   * Enable chat message parsing (for Claude sessions)
+   */
+  enableChatParsing(): void {
+    if (this.chatParser) {
+      this.isChatParsingEnabled = true;
+      logger.log('Chat parsing enabled');
+    }
+  }
+
+  /**
+   * Disable chat message parsing
+   */
+  disableChatParsing(): void {
+    this.isChatParsingEnabled = false;
+    logger.log('Chat parsing disabled');
+  }
+
+  /**
+   * Subscribe to chat messages
+   */
+  onChatMessage(handler: (message: ChatMessage) => void): () => void {
+    this.chatMessageHandlers.add(handler);
+    return () => this.chatMessageHandlers.delete(handler);
+  }
+
+  /**
+   * Check if this is a Claude session with chat support
+   */
+  hasChatSupport(): boolean {
+    return this.detector?.name === 'claude' && this.chatParser !== null;
   }
 }
 
