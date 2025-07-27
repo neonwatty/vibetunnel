@@ -13,6 +13,7 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { Z_INDEX } from '../utils/constants.js';
 import { createLogger } from '../utils/logger.js';
 import { detectMobile, isIOS } from '../utils/mobile-utils.js';
+import { mobileViewportManager } from '../utils/mobile-viewport.js';
 
 const logger = createLogger('chat-input');
 
@@ -43,16 +44,20 @@ export class ChatInput extends LitElement {
   private isMobile = detectMobile();
   private isIOSDevice = isIOS();
   private resizeObserver?: ResizeObserver;
-  private lastViewportHeight = window.visualViewport?.height || window.innerHeight;
+  private scrollIntoViewTimeout?: number;
+  private viewportUnsubscribe?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
     logger.log('Chat input connected');
 
-    // Listen for viewport changes (virtual keyboard)
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', this.handleViewportResize);
-    }
+    // Subscribe to viewport changes
+    this.viewportUnsubscribe = mobileViewportManager.subscribe((state) => {
+      // Handle keyboard visibility changes
+      if (state.isKeyboardVisible && this.isFocused) {
+        this.ensureInputVisible();
+      }
+    });
 
     // Set up resize observer for textarea
     this.resizeObserver = new ResizeObserver(() => {
@@ -64,11 +69,15 @@ export class ChatInput extends LitElement {
     super.disconnectedCallback();
     logger.log('Chat input disconnected');
 
-    if (window.visualViewport) {
-      window.visualViewport.removeEventListener('resize', this.handleViewportResize);
+    if (this.viewportUnsubscribe) {
+      this.viewportUnsubscribe();
     }
 
     this.resizeObserver?.disconnect();
+
+    if (this.scrollIntoViewTimeout) {
+      clearTimeout(this.scrollIntoViewTimeout);
+    }
   }
 
   firstUpdated() {
@@ -78,21 +87,19 @@ export class ChatInput extends LitElement {
     }
   }
 
-  private handleViewportResize = () => {
-    const currentHeight = window.visualViewport?.height || window.innerHeight;
-    const heightDiff = this.lastViewportHeight - currentHeight;
+  private ensureInputVisible() {
+    if (!this.textarea) return;
 
-    // Virtual keyboard is likely shown if viewport shrinks
-    if (heightDiff > 100 && this.isFocused) {
-      logger.debug('Virtual keyboard detected, adjusting layout');
-      // Scroll input into view if needed
-      requestAnimationFrame(() => {
-        this.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      });
-    }
+    // Get the input container
+    const container = this.closest('.chat-input-container');
+    if (!container) return;
 
-    this.lastViewportHeight = currentHeight;
-  };
+    // Use viewport manager to ensure visibility
+    mobileViewportManager.ensureElementVisible(container as HTMLElement, {
+      padding: 40,
+      animated: true,
+    });
+  }
 
   private handleInput(event: Event) {
     const target = event.target as HTMLTextAreaElement;
@@ -151,12 +158,29 @@ export class ChatInput extends LitElement {
 
     // iOS-specific: Prevent zoom on input focus
     if (this.isIOSDevice) {
-      document
-        .querySelector('meta[name="viewport"]')
-        ?.setAttribute(
-          'content',
-          'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no'
+      // Store current viewport content
+      const currentViewport = document.querySelector('meta[name="viewport"]');
+      const _originalContent = currentViewport?.getAttribute('content') || '';
+
+      // Temporarily disable zoom
+      currentViewport?.setAttribute(
+        'content',
+        'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+      );
+
+      // Ensure input is visible after keyboard appears
+      setTimeout(() => {
+        this.ensureInputVisible();
+
+        // Dispatch event to notify parent about keyboard
+        this.dispatchEvent(
+          new CustomEvent('keyboard-visible', {
+            detail: true,
+            bubbles: true,
+            composed: true,
+          })
         );
+      }, 300);
     }
   };
 
@@ -174,10 +198,27 @@ export class ChatInput extends LitElement {
 
     // iOS-specific: Re-enable zoom after blur
     if (this.isIOSDevice) {
-      document
-        .querySelector('meta[name="viewport"]')
-        ?.setAttribute('content', 'width=device-width, initial-scale=1');
+      // Small delay to prevent viewport jumping
+      setTimeout(() => {
+        document
+          .querySelector('meta[name="viewport"]')
+          ?.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+      }, 100);
     }
+
+    // Clear any pending scroll timeout
+    if (this.scrollIntoViewTimeout) {
+      clearTimeout(this.scrollIntoViewTimeout);
+    }
+
+    // Notify parent about keyboard hidden
+    this.dispatchEvent(
+      new CustomEvent('keyboard-visible', {
+        detail: false,
+        bubbles: true,
+        composed: true,
+      })
+    );
   };
 
   private sendMessage() {
@@ -214,10 +255,15 @@ export class ChatInput extends LitElement {
   render() {
     const isDisabled = this.disabled || !this.active;
 
+    // Calculate safe area padding for iOS devices
+    const safeAreaStyles = this.isIOSDevice
+      ? 'padding-bottom: env(safe-area-inset-bottom, 0);'
+      : '';
+
     return html`
       <div
-        class="chat-input-container flex items-end gap-2 px-4 py-3 border-t border-gray-800 bg-gray-900"
-        style="z-index: ${Z_INDEX.MOBILE_OVERLAY}"
+        class="chat-input-container flex items-end gap-2 px-4 py-3 border-t border-gray-800 bg-gray-900 ${this.isIOSDevice ? 'ios-safe-area' : ''}"
+        style="z-index: ${Z_INDEX.MOBILE_OVERLAY}; ${safeAreaStyles}"
       >
         <!-- Textarea container -->
         <div class="flex-1 relative">
@@ -311,6 +357,7 @@ export class ChatInput extends LitElement {
           ? html`
             <div
               class="text-center text-xs text-gray-500 py-2 bg-gray-900"
+              style="${safeAreaStyles}"
             >
               Tap to type • Enter to send${!this.isIOSDevice ? ' • Shift+Enter for new line' : ''}
             </div>

@@ -19,6 +19,7 @@ import { sessionActionService } from '../services/session-action-service.js';
 import { Z_INDEX } from '../utils/constants.js';
 import { createLogger } from '../utils/logger.js';
 import { detectMobile } from '../utils/mobile-utils.js';
+import { mobileViewportManager, type ViewportState } from '../utils/mobile-viewport.js';
 import './chat-actions.js';
 import './chat-bubble.js';
 import './chat-input.js';
@@ -52,6 +53,8 @@ export class ChatView extends LitElement {
   @state() private isLoading = false;
   @state() private visibleStartIndex = 0;
   @state() private visibleEndIndex = 50;
+  @state() private keyboardHeight = 0;
+  @state() private isKeyboardVisible = false;
 
   private ws: WebSocket | null = null;
   private scrollContainer: HTMLElement | null = null;
@@ -60,6 +63,9 @@ export class ChatView extends LitElement {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
+  private lastScrollTop = 0;
+  private viewportResizeTimeout: number | null = null;
+  private viewportUnsubscribe?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
@@ -67,6 +73,9 @@ export class ChatView extends LitElement {
 
     // Set up intersection observer for pull-to-refresh
     this.setupIntersectionObserver();
+
+    // Subscribe to viewport changes
+    this.viewportUnsubscribe = mobileViewportManager.subscribe(this.handleViewportStateChange);
   }
 
   disconnectedCallback() {
@@ -75,6 +84,14 @@ export class ChatView extends LitElement {
 
     this.cleanupWebSocket();
     this.intersectionObserver?.disconnect();
+
+    if (this.viewportUnsubscribe) {
+      this.viewportUnsubscribe();
+    }
+
+    if (this.viewportResizeTimeout) {
+      clearTimeout(this.viewportResizeTimeout);
+    }
   }
 
   updated(changedProperties: PropertyValues) {
@@ -306,11 +323,80 @@ export class ChatView extends LitElement {
     );
   }
 
-  private scrollToBottom() {
+  private scrollToBottom(smooth = false) {
     if (!this.scrollContainer) return;
 
-    this.scrollContainer.scrollTop = this.scrollContainer.scrollHeight;
+    // On mobile with keyboard visible, ensure we account for keyboard height
+    const behavior = smooth ? 'smooth' : 'auto';
+
+    this.scrollContainer.scrollTo({
+      top: this.scrollContainer.scrollHeight,
+      behavior: behavior as ScrollBehavior,
+    });
+
     this.isAutoScrollEnabled = true;
+  }
+
+  private handleViewportStateChange = (state: ViewportState) => {
+    const wasKeyboardVisible = this.isKeyboardVisible;
+    this.isKeyboardVisible = state.isKeyboardVisible;
+    this.keyboardHeight = state.keyboardHeight;
+
+    logger.debug('Viewport state changed:', {
+      isKeyboardVisible: state.isKeyboardVisible,
+      keyboardHeight: state.keyboardHeight,
+      orientation: state.orientation,
+      hasNotch: state.hasNotch,
+    });
+
+    // If keyboard just became visible, ensure input is in view
+    if (!wasKeyboardVisible && state.isKeyboardVisible) {
+      requestAnimationFrame(() => {
+        this.ensureInputVisible();
+      });
+    }
+
+    // Handle orientation changes
+    if (state.orientation !== this.lastOrientation) {
+      this.lastOrientation = state.orientation;
+      this.handleOrientationChange();
+    }
+
+    // Update layout
+    this.requestUpdate();
+  };
+
+  private lastOrientation?: 'portrait' | 'landscape';
+
+  private handleOrientationChange() {
+    logger.log('Orientation changed');
+
+    // Save scroll position
+    if (this.scrollContainer) {
+      this.lastScrollTop = this.scrollContainer.scrollTop;
+    }
+
+    // Update layout after orientation change
+    requestAnimationFrame(() => {
+      if (this.scrollContainer && this.lastScrollTop > 0) {
+        this.scrollContainer.scrollTop = this.lastScrollTop;
+      }
+      this.updateVisibleRange();
+    });
+  }
+
+  private ensureInputVisible() {
+    const chatInput = this.querySelector('chat-input');
+    if (chatInput && this.scrollContainer) {
+      // Use viewport manager to ensure element is visible
+      mobileViewportManager.ensureElementVisible(chatInput as HTMLElement, {
+        padding: 40,
+        animated: true,
+      });
+
+      // Also scroll to bottom in chat
+      this.scrollToBottom(true);
+    }
   }
 
   private async handleStopSession() {
@@ -433,6 +519,11 @@ export class ChatView extends LitElement {
       // Set loading state
       this.isLoading = true;
 
+      // Auto-scroll to bottom when sending message
+      requestAnimationFrame(() => {
+        this.scrollToBottom(true);
+      });
+
       // Clear loading state after a timeout (server should send response)
       setTimeout(() => {
         this.isLoading = false;
@@ -511,9 +602,16 @@ export class ChatView extends LitElement {
 
         <!-- Messages container -->
         <div 
-          class="flex-1 overflow-y-auto px-4 py-4"
+          class="flex-1 overflow-y-auto px-4 py-4 ${
+            this.isMobile ? 'overscroll-behavior-contain' : ''
+          }"
           @scroll=${this.handleScroll}
           id="scroll-container"
+          style="${
+            this.isMobile && this.isKeyboardVisible
+              ? `padding-bottom: ${Math.max(100, this.keyboardHeight)}px;`
+              : ''
+          }"
         >
           <!-- Pull to refresh trigger -->
           <div class="pull-to-refresh-trigger h-1"></div>
@@ -589,7 +687,11 @@ export class ChatView extends LitElement {
             logger.debug(`Input focus changed: ${e.detail}`);
             // Auto-scroll when keyboard opens
             if (e.detail && this.isMobile) {
-              requestAnimationFrame(() => this.scrollToBottom());
+              // Use smooth scroll when focusing
+              requestAnimationFrame(() => {
+                this.scrollToBottom(true);
+                this.ensureInputVisible();
+              });
             }
           }}
         ></chat-input>

@@ -1922,3 +1922,179 @@ body.initial-session-load .session-flex-responsive > session-card:nth-child(n + 
 .session-toggle-checkbox:focus-visible {
   box-shadow: 0 0 0 2px rgb(var(--color-primary) / 0.4);
 }
+
+/* Mobile Chat View Keyboard Handling */
+@layer components {
+  /* Chat view container adjustments for keyboard */
+  .chat-view {
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height */
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Messages container with keyboard padding */
+  .chat-messages-keyboard-visible {
+    transition: padding-bottom 0.3s ease-out;
+  }
+
+  /* Chat input with safe area support */
+  .chat-input-container {
+    position: relative;
+    background: rgb(var(--color-bg));
+    border-top: 1px solid rgb(var(--color-border));
+    /* Safe area padding for iOS devices */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    transition: transform 0.3s ease-out, padding-bottom 0.3s ease-out;
+  }
+
+  /* iOS-specific safe area handling */
+  .ios-safe-area {
+    padding-bottom: max(env(safe-area-inset-bottom, 0), 0.75rem);
+  }
+
+  /* Prevent overscroll on chat containers */
+  .overscroll-behavior-contain {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Smooth scrolling for chat messages */
+  .chat-messages-container {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Keyboard animation states */
+  .keyboard-transitioning .chat-input-container {
+    transition-duration: 0.25s;
+    transition-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  /* Orientation change handling */
+  @media screen and (orientation: landscape) {
+    .chat-view {
+      height: 100vh;
+      height: 100dvh;
+    }
+    
+    /* Reduce padding in landscape to maximize space */
+    .chat-input-container {
+      padding-top: 0.5rem;
+      padding-bottom: max(env(safe-area-inset-bottom, 0), 0.5rem);
+    }
+  }
+
+  /* Small viewport height handling (keyboard visible) */
+  @media screen and (max-height: 500px) {
+    .chat-header {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    
+    .chat-input-container {
+      padding-top: 0.5rem;
+      padding-bottom: max(env(safe-area-inset-bottom, 0), 0.5rem);
+    }
+  }
+
+  /* Virtual keyboard detection via viewport units */
+  @supports (height: 100dvh) {
+    .chat-view {
+      min-height: 100dvh;
+    }
+  }
+
+  /* Prevent zoom on input focus (iOS) */
+  @media screen and (-webkit-min-device-pixel-ratio: 0) {
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    textarea {
+      font-size: 16px !important; /* Prevents zoom on iOS */
+    }
+  }
+
+  /* Chat bubble adjustments for mobile */
+  @media (max-width: 640px) {
+    .chat-bubble {
+      max-width: 85vw;
+    }
+  }
+
+  /* Auto-scroll indicator positioning with keyboard */
+  .chat-scroll-indicator {
+    position: fixed;
+    transition: bottom 0.3s ease-out;
+  }
+
+  /* Keyboard visible state */
+  .keyboard-visible .chat-scroll-indicator {
+    bottom: calc(4rem + env(safe-area-inset-bottom, 0));
+  }
+}
+
+/* Viewport-specific utilities */
+@layer utilities {
+  /* Dynamic viewport height utilities */
+  .h-dvh {
+    height: 100vh;
+    height: 100dvh;
+  }
+  
+  .min-h-dvh {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  
+  .max-h-dvh {
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  /* Safe area utilities */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+  
+  .pl-safe {
+    padding-left: env(safe-area-inset-left, 0);
+  }
+  
+  .pr-safe {
+    padding-right: env(safe-area-inset-right, 0);
+  }
+
+  /* Keyboard dismiss on scroll helper */
+  .keyboard-dismiss-scroll {
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* iOS-specific viewport fixes */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari keyboard handling */
+  .ios-keyboard-active {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  
+  /* Prevent rubber band scrolling when keyboard is visible */
+  .ios-keyboard-active .chat-messages-container {
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: auto;
+  }
+  
+  /* Re-enable smooth scrolling when keyboard is hidden */
+  .ios-keyboard-inactive .chat-messages-container {
+    -webkit-overflow-scrolling: touch;
+  }
+}

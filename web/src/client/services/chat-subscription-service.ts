@@ -141,9 +141,9 @@ export class ChatSubscriptionService {
 
   private cacheCleanupTimer: number | null = null;
 
-  // biome-ignore lint/complexity/noUselessConstructor: Documents the intentional design decision to not auto-connect
   constructor() {
     // Do not connect automatically - wait for initialize() to be called
+    // This is an intentional design decision to control connection timing
     this.startCacheCleanup();
   }
 
@@ -453,11 +453,16 @@ export class ChatSubscriptionService {
 
     // Limit cache size
     if (cache.messages.length > ChatSubscriptionService.MAX_MESSAGES_PER_SESSION) {
-      const removed = cache.messages.splice(0, cache.messages.length - ChatSubscriptionService.MAX_MESSAGES_PER_SESSION);
-      removed.forEach((msg) => cache!.messageIds.delete(msg.id));
+      const removed = cache.messages.splice(
+        0,
+        cache.messages.length - ChatSubscriptionService.MAX_MESSAGES_PER_SESSION
+      );
+      removed.forEach((msg) => cache?.messageIds.delete(msg.id));
     }
 
-    logger.debug(`Added message ${message.id} to cache for session ${sessionId} (${cache.messages.length} total)`);
+    logger.debug(
+      `Added message ${message.id} to cache for session ${sessionId} (${cache.messages.length} total)`
+    );
   }
 
   private startCacheCleanup() {
@@ -488,10 +493,14 @@ export class ChatSubscriptionService {
 
     // If we still have too many cached sessions, remove the oldest ones
     if (this.messageCache.size > ChatSubscriptionService.MAX_CACHED_SESSIONS) {
-      const sessions = Array.from(this.messageCache.entries())
-        .sort(([, a], [, b]) => a.lastUpdate - b.lastUpdate);
+      const sessions = Array.from(this.messageCache.entries()).sort(
+        ([, a], [, b]) => a.lastUpdate - b.lastUpdate
+      );
 
-      const toRemove = sessions.slice(0, this.messageCache.size - ChatSubscriptionService.MAX_CACHED_SESSIONS);
+      const toRemove = sessions.slice(
+        0,
+        this.messageCache.size - ChatSubscriptionService.MAX_CACHED_SESSIONS
+      );
       toRemove.forEach(([sessionId]) => {
         this.messageCache.delete(sessionId);
         logger.debug(`Removed old cache for session ${sessionId} (cache size limit)`);
@@ -582,7 +591,9 @@ export class ChatSubscriptionService {
       }
     }
 
-    logger.debug(`Subscribed to chat messages for session ${sessionId} (${subscription.handlers.size} handlers)`);
+    logger.debug(
+      `Subscribed to chat messages for session ${sessionId} (${subscription.handlers.size} handlers)`
+    );
 
     // Return unsubscribe function
     return () => {

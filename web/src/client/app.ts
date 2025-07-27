@@ -105,6 +105,7 @@ export class VibeTunnelApp extends LitElement {
     this.setupNotificationHandlers();
     this.setupResponsiveObserver();
     this.setupPreferences();
+    this.setupViewportMeta();
     // Initialize title updater
     titleManager.initAutoUpdates();
     // Listen for keyboard capture toggle events from input manager
@@ -1516,6 +1517,53 @@ export class VibeTunnelApp extends LitElement {
       `Keyboard capture ${this.keyboardCaptureActive ? 'enabled' : 'disabled'} via indicator`
     );
   };
+
+  private setupViewportMeta() {
+    // Ensure viewport meta tag exists and is properly configured
+    let viewport = document.querySelector('meta[name="viewport"]');
+
+    if (!viewport) {
+      viewport = document.createElement('meta');
+      viewport.setAttribute('name', 'viewport');
+      document.head.appendChild(viewport);
+    }
+
+    // Set initial viewport configuration with safe area support
+    viewport.setAttribute('content', 'width=device-width, initial-scale=1, viewport-fit=cover');
+
+    // Add CSS for safe area handling
+    const style = document.createElement('style');
+    style.textContent = `
+      /* iOS safe area handling */
+      .ios-safe-area {
+        padding-bottom: env(safe-area-inset-bottom, 0);
+      }
+      
+      /* Prevent overscroll bounce on mobile */
+      .overscroll-behavior-contain {
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      /* Ensure proper scrolling on iOS */
+      .ios-split-view {
+        position: fixed;
+        overflow: hidden;
+      }
+      
+      /* Smooth transitions for keyboard */
+      .chat-input-container {
+        transition: transform 0.3s ease-out;
+      }
+      
+      /* Prevent text selection while scrolling */
+      .chat-view.scrolling * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   private get showSplitView(): boolean {
     return this.currentView === 'session' && this.selectedSessionId !== null;
