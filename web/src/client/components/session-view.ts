@@ -32,6 +32,7 @@ import {
 } from './session-view/direct-keyboard-manager.js';
 // New managers
 import { FileOperationsManager } from './session-view/file-operations-manager.js';
+import { GestureManager } from './session-view/gesture-manager.js';
 import { InputManager } from './session-view/input-manager.js';
 import type { LifecycleEventManagerCallbacks } from './session-view/interfaces.js';
 import { LifecycleEventManager } from './session-view/lifecycle-event-manager.js';
@@ -94,6 +95,7 @@ export class SessionView extends LitElement {
   private terminalSettingsManager = new TerminalSettingsManager();
   private sessionActionsHandler = new SessionActionsHandler();
   private uiStateManager = new UIStateManager();
+  private gestureManager = new GestureManager();
 
   private gitService = new GitService(authClient);
   private boundHandleOrientationChange?: () => void;
@@ -444,6 +446,16 @@ export class SessionView extends LitElement {
 
     // Use FileOperationsManager's event setup which includes dragend and global dragover
     this.fileOperationsManager.setupEventListeners(this);
+
+    // Initialize gesture manager for mobile view switching
+    this.gestureManager.initialize(this, {
+      getCurrentView: () => this.currentView,
+      setCurrentView: (view: 'terminal' | 'chat') => this.setCurrentView(view),
+      shouldShowViewToggle: () => this.shouldShowViewToggle(),
+      requestUpdate: () => this.requestUpdate(),
+      saveViewPreference: (view: 'terminal' | 'chat') => this.saveViewPreference(view),
+      triggerHapticFeedback: () => this.triggerHapticFeedback(),
+    });
   }
 
   disconnectedCallback() {
@@ -478,6 +490,9 @@ export class SessionView extends LitElement {
 
     // Clean up loading animation manager
     this.loadingAnimationManager.cleanup();
+
+    // Clean up gesture manager
+    this.gestureManager.cleanup();
   }
 
   private checkOrientation() {
@@ -557,6 +572,9 @@ export class SessionView extends LitElement {
 
   updated(changedProperties: Map<string, unknown>) {
     super.updated(changedProperties);
+
+    // Update gesture manager container references after render
+    this.gestureManager.updateContainerReferences();
 
     // If session changed, clean up old stream connection and reset terminal state
     if (changedProperties.has('session')) {
@@ -794,6 +812,17 @@ export class SessionView extends LitElement {
   private shouldShowViewToggle(): boolean {
     // Show toggle for sessions with chat support or on mobile
     return !!(this.session?.hasChatSupport || this.isMobile);
+  }
+
+  private triggerHapticFeedback(): void {
+    // Try native vibration API for haptic feedback
+    if ('vibrate' in navigator) {
+      try {
+        navigator.vibrate(10); // Short, subtle vibration
+      } catch (error) {
+        logger.debug('Vibration API not available or failed:', error);
+      }
+    }
   }
 
   private handleSessionExit(e: Event) {
@@ -1188,7 +1217,7 @@ export class SessionView extends LitElement {
 
         <!-- Content Area (Terminal or Worktree) -->
         <div
-          class="terminal-area bg-bg ${
+          class="terminal-area bg-bg view-transition-container ${
             this.session?.status === 'exited' && uiState.viewMode === 'terminal'
               ? 'session-exited opacity-90'
               : ''
@@ -1224,44 +1253,52 @@ export class SessionView extends LitElement {
                 }}
               ></worktree-manager>
             `
-              : uiState.viewMode === 'terminal' && this.currentView === 'terminal'
+              : uiState.viewMode === 'terminal'
                 ? html`
-              <!-- Enhanced Terminal Component -->
-              <terminal-renderer
-                id="session-terminal"
-                .session=${this.session}
-                .useBinaryMode=${uiState.useBinaryMode}
-                .terminalFontSize=${uiState.terminalFontSize}
-                .terminalMaxCols=${uiState.terminalMaxCols}
-                .terminalTheme=${uiState.terminalTheme}
-                .disableClick=${uiState.isMobile && uiState.useDirectKeyboard}
-                .hideScrollButton=${uiState.showQuickKeys}
-                .onTerminalClick=${this.boundHandleTerminalClick}
-                .onTerminalInput=${this.boundHandleTerminalInput}
-                .onTerminalResize=${this.boundHandleTerminalResize}
-                .onTerminalReady=${this.boundHandleTerminalReady}
-              ></terminal-renderer>
-            `
-                : this.currentView === 'chat' && uiState.viewMode === 'terminal'
+              <!-- Terminal View Container -->
+              <div class="view-container terminal-view ${this.currentView === 'terminal' ? 'active' : ''}">
+                <terminal-renderer
+                  id="session-terminal"
+                  .session=${this.session}
+                  .useBinaryMode=${uiState.useBinaryMode}
+                  .terminalFontSize=${uiState.terminalFontSize}
+                  .terminalMaxCols=${uiState.terminalMaxCols}
+                  .terminalTheme=${uiState.terminalTheme}
+                  .disableClick=${uiState.isMobile && uiState.useDirectKeyboard}
+                  .hideScrollButton=${uiState.showQuickKeys}
+                  .onTerminalClick=${this.boundHandleTerminalClick}
+                  .onTerminalInput=${this.boundHandleTerminalInput}
+                  .onTerminalResize=${this.boundHandleTerminalResize}
+                  .onTerminalReady=${this.boundHandleTerminalReady}
+                ></terminal-renderer>
+              </div>
+
+              <!-- Chat View Container -->
+              ${
+                this.shouldShowViewToggle()
                   ? html`
-              <!-- Chat View Component -->
-              <chat-view
-                .session=${this.session}
-                .sessionId=${this.session?.id || ''}
-                .active=${true}
-                @navigate-back=${() => this.setCurrentView('terminal')}
-                @error=${(e: CustomEvent) => {
-                  this.dispatchEvent(
-                    new CustomEvent('error', {
-                      detail: e.detail,
-                      bubbles: true,
-                      composed: true,
-                    })
-                  );
-                }}
-              ></chat-view>
-            `
+                <div class="view-container chat-view ${this.currentView === 'chat' ? 'active' : ''}">
+                  <chat-view
+                    .session=${this.session}
+                    .sessionId=${this.session?.id || ''}
+                    .active=${this.currentView === 'chat'}
+                    @navigate-back=${() => this.setCurrentView('terminal')}
+                    @error=${(e: CustomEvent) => {
+                      this.dispatchEvent(
+                        new CustomEvent('error', {
+                          detail: e.detail,
+                          bubbles: true,
+                          composed: true,
+                        })
+                      );
+                    }}
+                  ></chat-view>
+                </div>
+              `
                   : ''
+              }
+            `
+                : ''
           }
         </div>
 

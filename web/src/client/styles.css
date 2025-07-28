@@ -46,6 +46,14 @@
   --vt-transition-sidebar: 200ms;
   --vt-transition-mobile-slide: 200ms;
   --vt-transition-resize-handle: 200ms;
+  --vt-gesture-transition: 300ms;
+  --vt-gesture-preview-transition: 0ms; /* No transition during preview */
+
+  /* Gesture properties for dynamic updates */
+  --gesture-translate-x: 0;
+  --gesture-translate-y: 0;
+  --gesture-scale: 1;
+  --gesture-opacity: 1;
 
   /* Z-index layers */
   --vt-z-mobile-overlay: 20;
@@ -2262,5 +2270,237 @@ body.initial-session-load .session-flex-responsive > session-card:nth-child(n + 
   /* Smooth return animation */
   .chat-messages-releasing {
     transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+  }
+}
+
+/* ========================================
+   SWIPE GESTURE ANIMATIONS
+   ======================================== */
+
+/* View transition container for smooth swipe animations */
+.view-transition-container {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-x; /* Allow horizontal panning for gestures */
+}
+
+/* Individual view containers for sliding */
+.view-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  transform: translate3d(var(--gesture-translate-x, 0), var(--gesture-translate-y, 0), 0) scale(var(--gesture-scale, 1));
+  opacity: var(--gesture-opacity, 1);
+  touch-action: pan-x; /* Allow horizontal gestures */
+  contain: layout style paint; /* Optimize for animations */
+  will-change: transform, opacity; /* Hint to browser for optimization */
+}
+
+/* Terminal view positioning - optimized with CSS variables */
+.terminal-view {
+  --gesture-translate-x: 0%;
+  transition: transform var(--vt-gesture-transition) cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.terminal-view.active {
+  transform: translateX(0%);
+}
+
+.terminal-view.sliding-left {
+  transform: translateX(-100%);
+}
+
+.terminal-view.sliding-right {
+  transform: translateX(100%);
+}
+
+/* Chat view positioning */
+.chat-view {
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.chat-view.active {
+  transform: translateX(0%);
+}
+
+.chat-view.sliding-left {
+  transform: translateX(-100%);
+}
+
+.chat-view.sliding-right {
+  transform: translateX(100%);
+}
+
+/* Preview state during gesture */
+.view-container.preview {
+  transition: none !important; /* Disable transitions during gesture */
+}
+
+/* Elastic animations for smooth interactions */
+.view-container.elastic {
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  will-change: transform;
+  contain: layout style paint;
+}
+
+/* Snap-back animation when gesture doesn't meet threshold */
+.view-container.snap-back {
+  transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  will-change: transform;
+  contain: layout style paint;
+}
+
+/* Gesture preview overlay for visual feedback */
+.gesture-preview-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--color-primary), 0.1) 50%,
+    transparent 100%
+  );
+  opacity: var(--gesture-opacity, 0);
+  transition: opacity 0.2s ease-out;
+  will-change: opacity;
+  contain: layout style paint;
+}
+
+.gesture-preview-overlay.active {
+  --gesture-opacity: 1;
+}
+
+/* Progress indicator for swipe gesture */
+.swipe-progress-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translate3d(0, -50%, 0) scale(var(--gesture-scale, 1));
+  width: 4px;
+  height: 60px;
+  background: rgb(var(--color-primary));
+  border-radius: 2px;
+  opacity: var(--gesture-opacity, 0);
+  transition: opacity 0.2s ease-out;
+  z-index: 15;
+  will-change: transform, opacity;
+  contain: layout style paint;
+}
+
+.swipe-progress-indicator.left {
+  left: 20px;
+}
+
+.swipe-progress-indicator.right {
+  right: 20px;
+}
+
+.swipe-progress-indicator.active {
+  --gesture-opacity: 0.8;
+  animation: pulse-indicator 1s ease-in-out infinite;
+}
+
+@keyframes pulse-indicator {
+  0%, 100% {
+    transform: translate3d(0, -50%, 0) scale(var(--gesture-scale, 1));
+    opacity: var(--gesture-opacity, 0.8);
+  }
+  50% {
+    transform: translate3d(0, -50%, 0) scale(calc(var(--gesture-scale, 1) * 1.1));
+    opacity: 1;
+  }
+}
+
+/* View transition animations */
+.view-slide-in-left {
+  animation: slideInFromLeft 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+.view-slide-in-right {
+  animation: slideInFromRight 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+.view-slide-out-left {
+  animation: slideOutToLeft 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+.view-slide-out-right {
+  animation: slideOutToRight 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) forwards;
+}
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0%);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0%);
+  }
+}
+
+@keyframes slideOutToLeft {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    transform: translateX(0%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Haptic feedback simulation for devices that support it */
+@media (prefers-reduced-motion: no-preference) {
+  .view-container.haptic-feedback {
+    animation: subtle-vibration 0.1s ease-out;
+  }
+}
+
+@keyframes subtle-vibration {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(0.5px);
+  }
+  75% {
+    transform: translateX(-0.5px);
+  }
+}
+
+/* Disable gesture animations when accessibility motion is reduced */
+@media (prefers-reduced-motion: reduce) {
+  .view-container,
+  .terminal-view,
+  .chat-view,
+  .gesture-preview-overlay,
+  .swipe-progress-indicator {
+    transition: none !important;
+    animation: none !important;
   }
 }
