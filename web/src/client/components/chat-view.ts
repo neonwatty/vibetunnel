@@ -22,15 +22,24 @@ import { detectMobile } from '../utils/mobile-utils.js';
 import { mobileViewportManager, type ViewportState } from '../utils/mobile-viewport.js';
 import './chat-actions.js';
 import './chat-bubble.js';
+import './optimized-chat-bubble.js';
 import './chat-input.js';
 import './pull-to-refresh.js';
+import { domPool } from '../utils/dom-pool.js';
 import type { PullToRefreshState } from './pull-to-refresh.js';
 
 const logger = createLogger('chat-view');
 
-// Message buffer size for virtual scrolling
+// Virtual scrolling configuration
 const MESSAGE_BUFFER_SIZE = 100;
 const SCROLL_BUFFER_PIXELS = 100;
+const VIRTUAL_SCROLL_ITEM_HEIGHT = 80; // Base height estimate
+const VIEWPORT_OVERSCAN = 5; // Extra items to render outside viewport
+const INTERSECTION_THRESHOLD = 0.1;
+const RENDER_BATCH_SIZE = 10; // Centralized batch size constant
+const RENDER_THROTTLE_MS = 16; // ~60fps
+const MIN_VISIBLE_ITEMS = 3; // Minimum items to keep visible
+const MAX_HEIGHT_CACHE_SIZE = 1000; // Maximum height cache entries
 
 // Pull-to-refresh constants
 const PULL_THRESHOLD = 80;
@@ -43,6 +52,28 @@ const REFRESH_INDICATOR_HEIGHT = 60;
 interface MessageGroup {
   type: ChatMessageType;
   messages: ChatMessage[];
+  timestamp: number;
+  id: string; // Unique identifier for virtual scrolling
+  estimatedHeight?: number; // Cached height for performance
+  actualHeight?: number; // Measured height after render
+  lineCount?: number; // Cached line count for height estimation
+  contentHash?: string; // Hash of content for cache invalidation
+}
+
+interface VirtualScrollState {
+  viewportHeight: number;
+  scrollTop: number;
+  totalHeight: number;
+  startIndex: number;
+  endIndex: number;
+  offsetTop: number;
+  offsetBottom: number;
+}
+
+interface RenderBatch {
+  groups: MessageGroup[];
+  startIndex: number;
+  endIndex: number;
   timestamp: number;
 }
 
@@ -68,13 +99,22 @@ export class ChatView extends LitElement {
   @state() private messageGroups: MessageGroup[] = [];
   @state() private isAutoScrollEnabled = true;
   @state() private isLoading = false;
-  @state() private visibleStartIndex = 0;
-  @state() private visibleEndIndex = 50;
+  @state() private virtualScrollState: VirtualScrollState = {
+    viewportHeight: 0,
+    scrollTop: 0,
+    totalHeight: 0,
+    startIndex: 0,
+    endIndex: 50,
+    offsetTop: 0,
+    offsetBottom: 0,
+  };
+  @state() private visibleGroups: MessageGroup[] = [];
   @state() private keyboardHeight = 0;
   @state() private isKeyboardVisible = false;
   @state() private pullToRefreshState: PullToRefreshState = 'idle';
   @state() private pullDistance = 0;
   @state() private hasMoreHistory = true;
+  @state() private isVisible = true; // Track component visibility
 
   private ws: WebSocket | null = null;
   private scrollContainer: HTMLElement | null = null;
@@ -93,6 +133,12 @@ export class ChatView extends LitElement {
   private touchEndHandler?: () => void;
   private lastTouchMoveTime = 0;
   private touchMoveThrottle = 16; // ~60fps
+  private intersectionObserver?: IntersectionObserver;
+  private resizeObserver?: ResizeObserver;
+  private renderRafId?: number;
+  private lastRenderTime = 0;
+  private pendingRenderBatch?: RenderBatch;
+  private messageHeightCache = new Map<string, number>();
 
   connectedCallback() {
     super.connectedCallback();
@@ -108,6 +154,7 @@ export class ChatView extends LitElement {
 
     this.cleanupWebSocket();
     this.cleanupTouchHandlers();
+    this.cleanupVirtualScrolling();
 
     if (this.viewportUnsubscribe) {
       this.viewportUnsubscribe();
@@ -140,6 +187,21 @@ export class ChatView extends LitElement {
       if (this.isAutoScrollEnabled) {
         requestAnimationFrame(() => this.scrollToBottom());
       }
+    }
+
+    // Re-observe elements after render
+    if (
+      changedProperties.has('visibleGroups') &&
+      this.resizeObserver &&
+      this.intersectionObserver
+    ) {
+      requestAnimationFrame(() => {
+        const groupElements = this.querySelectorAll('[data-group-id]');
+        groupElements.forEach((element) => {
+          this.resizeObserver?.observe(element);
+          this.intersectionObserver?.observe(element);
+        });
+      });
     }
   }
 
@@ -276,6 +338,7 @@ export class ChatView extends LitElement {
     // Group consecutive messages by type for better visual organization
     const groups: MessageGroup[] = [];
     let currentGroup: MessageGroup | null = null;
+    let groupIndex = 0;
 
     for (const message of this.messages) {
       if (!currentGroup || currentGroup.type !== message.type) {
@@ -283,14 +346,19 @@ export class ChatView extends LitElement {
           type: message.type,
           messages: [message],
           timestamp: message.timestamp,
+          id: `group-${groupIndex++}-${message.type}-${message.timestamp}`,
+          estimatedHeight: VIRTUAL_SCROLL_ITEM_HEIGHT,
         };
         groups.push(currentGroup);
       } else {
         currentGroup.messages.push(message);
+        // Update group ID to reflect all messages
+        currentGroup.id = `group-${groupIndex - 1}-${message.type}-${currentGroup.timestamp}-${message.timestamp}`;
       }
     }
 
     this.messageGroups = groups;
+    this.scheduleVirtualScrollUpdate();
   }
 
   private setupTouchHandlers() {
@@ -452,25 +520,86 @@ export class ChatView extends LitElement {
     const isAtBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 50;
     this.isAutoScrollEnabled = isAtBottom;
 
-    // Update visible range for virtual scrolling
-    this.updateVisibleRange();
+    // Throttle virtual scroll updates
+    this.scheduleVirtualScrollUpdate();
   }
 
-  private updateVisibleRange() {
+  private updateVirtualScrollState() {
     if (!this.scrollContainer) return;
 
-    const containerHeight = this.scrollContainer.clientHeight;
-    const scrollTop = this.scrollContainer.scrollTop;
-    const itemHeight = 80; // Approximate height per message group
+    try {
+      const viewportHeight = this.scrollContainer.clientHeight;
+      const scrollTop = this.scrollContainer.scrollTop;
 
-    this.visibleStartIndex = Math.max(
-      0,
-      Math.floor((scrollTop - SCROLL_BUFFER_PIXELS) / itemHeight)
-    );
-    this.visibleEndIndex = Math.min(
-      this.messageGroups.length,
-      Math.ceil((scrollTop + containerHeight + SCROLL_BUFFER_PIXELS) / itemHeight)
-    );
+      // Calculate total height and visible range
+      let totalHeight = 0;
+      let startIndex = 0;
+      let endIndex = this.messageGroups.length;
+      let offsetTop = 0;
+      let offsetBottom = 0;
+
+      // Find start index based on scroll position
+      for (let i = 0; i < this.messageGroups.length; i++) {
+        const group = this.messageGroups[i];
+        const height = this.getGroupHeight(group);
+
+        if (totalHeight + height < scrollTop - SCROLL_BUFFER_PIXELS) {
+          startIndex = i + 1;
+          offsetTop = totalHeight + height;
+        }
+
+        totalHeight += height;
+
+        if (
+          totalHeight > scrollTop + viewportHeight + SCROLL_BUFFER_PIXELS &&
+          endIndex === this.messageGroups.length
+        ) {
+          endIndex = Math.min(i + VIEWPORT_OVERSCAN, this.messageGroups.length);
+          offsetBottom =
+            totalHeight - (totalHeight - scrollTop - viewportHeight - SCROLL_BUFFER_PIXELS);
+        }
+      }
+
+      // Ensure we render at least minimum items
+      startIndex = Math.max(0, startIndex - VIEWPORT_OVERSCAN);
+      endIndex = Math.max(startIndex + MIN_VISIBLE_ITEMS, endIndex);
+
+      this.virtualScrollState = {
+        viewportHeight,
+        scrollTop,
+        totalHeight,
+        startIndex,
+        endIndex,
+        offsetTop,
+        offsetBottom,
+      };
+
+      this.updateVisibleGroups();
+    } catch (error) {
+      logger.error('Virtual scrolling update failed:', error);
+
+      // Fallback to simple rendering without virtual scrolling
+      this.virtualScrollState = {
+        viewportHeight: this.scrollContainer?.clientHeight || 0,
+        scrollTop: this.scrollContainer?.scrollTop || 0,
+        totalHeight: this.messageGroups.length * VIRTUAL_SCROLL_ITEM_HEIGHT,
+        startIndex: 0,
+        endIndex: Math.min(this.messageGroups.length, RENDER_BATCH_SIZE),
+        offsetTop: 0,
+        offsetBottom: 0,
+      };
+
+      this.updateVisibleGroups();
+
+      // Dispatch error event for external handling
+      this.dispatchEvent(
+        new CustomEvent('error', {
+          detail: 'Virtual scrolling error - fallback mode enabled',
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
   }
 
   private scrollToBottom(smooth = false) {
@@ -531,7 +660,7 @@ export class ChatView extends LitElement {
       if (this.scrollContainer && this.lastScrollTop > 0) {
         this.scrollContainer.scrollTop = this.lastScrollTop;
       }
-      this.updateVisibleRange();
+      this.updateVirtualScrollState();
     });
   }
 
@@ -690,23 +819,260 @@ export class ChatView extends LitElement {
     }
   }
 
+  private cleanupVirtualScrolling() {
+    if (this.intersectionObserver) {
+      this.intersectionObserver.disconnect();
+      this.intersectionObserver = undefined;
+    }
+
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = undefined;
+    }
+
+    if (this.renderRafId) {
+      // Clear both types since we can't reliably distinguish
+      // Modern browsers handle calling wrong clear function gracefully
+      try {
+        clearTimeout(this.renderRafId);
+        cancelAnimationFrame(this.renderRafId);
+      } catch {
+        // Ignore any errors from clearing the wrong type
+      }
+      this.renderRafId = undefined;
+    }
+
+    // Return any pooled elements
+    this.returnPooledElements();
+  }
+
+  private returnPooledElements() {
+    // Clean up any pooled DOM elements
+    const pooledElements = this.querySelectorAll('[data-pooled="true"]');
+    pooledElements.forEach((element) => {
+      const poolType = element.getAttribute('data-pool-type');
+      if (poolType) {
+        domPool.release(poolType, element as HTMLElement);
+      }
+    });
+  }
+
+  private setupVirtualScrolling() {
+    if (!this.scrollContainer) return;
+
+    // Setup Intersection Observer for lazy loading
+    this.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const groupElement = entry.target as HTMLElement;
+            const groupId = groupElement.dataset.groupId;
+            if (groupId) {
+              this.lazyLoadGroupContent(groupId);
+            }
+          }
+        });
+      },
+      {
+        root: this.scrollContainer,
+        threshold: INTERSECTION_THRESHOLD,
+        rootMargin: `${SCROLL_BUFFER_PIXELS}px`,
+      }
+    );
+
+    // Setup ResizeObserver for measuring actual heights
+    this.resizeObserver = new ResizeObserver((entries) => {
+      let needsUpdate = false;
+
+      entries.forEach((entry) => {
+        const element = entry.target as HTMLElement;
+        const groupId = element.dataset.groupId;
+
+        if (groupId) {
+          const height = entry.contentRect.height;
+          const cached = this.messageHeightCache.get(groupId);
+
+          if (!cached || Math.abs(cached - height) > 5) {
+            this.messageHeightCache.set(groupId, height);
+            needsUpdate = true;
+
+            // Limit cache size to prevent memory leaks
+            if (this.messageHeightCache.size > MAX_HEIGHT_CACHE_SIZE) {
+              const firstKey = this.messageHeightCache.keys().next().value;
+              if (firstKey) {
+                this.messageHeightCache.delete(firstKey);
+              }
+            }
+          }
+        }
+      });
+
+      if (needsUpdate) {
+        this.scheduleVirtualScrollUpdate();
+      }
+    });
+  }
+
+  private getGroupHeight(group: MessageGroup): number {
+    const cached = this.messageHeightCache.get(group.id);
+    if (cached) return cached;
+
+    // Use cached height calculation if available
+    if (group.estimatedHeight && group.lineCount !== undefined) {
+      return group.estimatedHeight;
+    }
+
+    // Calculate height based on content with caching
+    let estimatedHeight = VIRTUAL_SCROLL_ITEM_HEIGHT;
+    let totalLines = 0;
+
+    // Add extra height for code blocks and thinking sections
+    for (const message of group.messages) {
+      for (const segment of message.content) {
+        if (segment.type === 'code') {
+          // Cache line count to avoid repeated string splitting
+          const lineCount = segment.content.split('\n').length;
+          totalLines += lineCount;
+          estimatedHeight += Math.min(lineCount * 20, 200);
+        } else if (segment.type === 'thinking') {
+          estimatedHeight += 40; // Collapsed thinking block
+        } else {
+          // Estimate lines for text content
+          const textLines = Math.ceil(segment.content.length / 80); // Rough estimate
+          totalLines += textLines;
+          estimatedHeight += textLines * 20;
+        }
+      }
+    }
+
+    // Cache the calculation in the group object
+    group.estimatedHeight = estimatedHeight;
+    group.lineCount = totalLines;
+
+    return estimatedHeight;
+  }
+
+  private scheduleVirtualScrollUpdate() {
+    if (this.renderRafId) return;
+
+    const now = performance.now();
+    if (now - this.lastRenderTime < RENDER_THROTTLE_MS) {
+      // Too soon, use setTimeout for throttling instead of nested RAF
+      const delay = Math.max(1, RENDER_THROTTLE_MS - (now - this.lastRenderTime));
+      this.renderRafId = window.setTimeout(() => {
+        this.renderRafId = undefined;
+        this.updateVirtualScrollState();
+        this.lastRenderTime = performance.now();
+      }, delay);
+    } else {
+      // Use RAF for immediate updates
+      this.renderRafId = requestAnimationFrame(() => {
+        this.renderRafId = undefined;
+        this.updateVirtualScrollState();
+        this.lastRenderTime = performance.now();
+      });
+    }
+  }
+
+  private updateVisibleGroups() {
+    const { startIndex, endIndex } = this.virtualScrollState;
+
+    // Create render batch
+    const newVisibleGroups = this.messageGroups.slice(startIndex, endIndex);
+
+    // Batch update if groups have changed
+    if (!this.arraysEqual(this.visibleGroups, newVisibleGroups)) {
+      this.pendingRenderBatch = {
+        groups: newVisibleGroups,
+        startIndex,
+        endIndex,
+        timestamp: performance.now(),
+      };
+
+      this.processPendingRenderBatch();
+    }
+  }
+
+  private processPendingRenderBatch() {
+    if (!this.pendingRenderBatch) return;
+
+    const batch = this.pendingRenderBatch;
+    this.pendingRenderBatch = undefined;
+
+    // Apply batch update
+    this.visibleGroups = batch.groups;
+
+    // Trigger re-render
+    this.requestUpdate();
+  }
+
+  private arraysEqual(a: MessageGroup[], b: MessageGroup[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => item.id === b[index]?.id);
+  }
+
+  private lazyLoadGroupContent(groupId: string) {
+    // Find the group and trigger lazy loading for heavy content
+    const group = this.messageGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    // Process code segments for syntax highlighting
+    for (const message of group.messages) {
+      for (const segment of message.content) {
+        if (segment.type === 'code' && segment.language) {
+          // Trigger syntax highlighting if not already done
+          this.lazyHighlightCode(segment);
+        }
+      }
+    }
+  }
+
+  private async lazyHighlightCode(_segment: import('../../shared/types.js').ContentSegment) {
+    // Placeholder for lazy syntax highlighting
+    // This would integrate with a syntax highlighting library
+    // when the code block becomes visible
+    // Example: await import('highlight.js').then(hljs => {
+    //   hljs.highlightElement(codeElement);
+    // });
+  }
+
   private renderMessageGroup(group: MessageGroup) {
+    const useOptimized = this.messageGroups.length > 20; // Use optimized bubbles for large lists
+
     return html`
       <div class="message-group">
         ${repeat(
           group.messages,
           (msg) => msg.id,
-          (message, index) => html`
-            <chat-bubble
-              .message=${message}
-              .isGrouped=${true}
-              .isFirstInGroup=${index === 0}
-              .isLastInGroup=${index === group.messages.length - 1}
-              @copy-message=${(e: CustomEvent<string>) => {
-                logger.debug('Message copied:', `${e.detail.substring(0, 50)}...`);
-              }}
-            ></chat-bubble>
-          `
+          (message, index) => {
+            const isFirstInGroup = index === 0;
+            const isLastInGroup = index === group.messages.length - 1;
+
+            return useOptimized
+              ? html`
+              <optimized-chat-bubble
+                .message=${message}
+                .isGrouped=${true}
+                .isFirstInGroup=${isFirstInGroup}
+                .isLastInGroup=${isLastInGroup}
+                .lazy=${!this.isVisible}
+                @copy-message=${(e: CustomEvent<string>) => {
+                  logger.debug('Message copied:', `${e.detail.substring(0, 50)}...`);
+                }}
+              ></optimized-chat-bubble>
+            `
+              : html`
+              <chat-bubble
+                .message=${message}
+                .isGrouped=${true}
+                .isFirstInGroup=${isFirstInGroup}
+                .isLastInGroup=${isLastInGroup}
+                @copy-message=${(e: CustomEvent<string>) => {
+                  logger.debug('Message copied:', `${e.detail.substring(0, 50)}...`);
+                }}
+              ></chat-bubble>
+            `;
+          }
         )}
       </div>
     `;
@@ -782,20 +1148,52 @@ export class ChatView extends LitElement {
           }
 
           <!-- Message groups with virtual scrolling -->
-          <div id="messages-container">
+          <div 
+            id="messages-container"
+            class="relative"
+            style="height: ${this.virtualScrollState.totalHeight}px;"
+          >
+            <!-- Virtual spacer for scrolled out content above -->
             ${
-              this.messageGroups.length === 0
+              this.virtualScrollState.offsetTop > 0
                 ? html`
-              <div class="text-center text-gray-500 py-8">
-                <p>No messages yet</p>
-                <p class="text-sm mt-2">Type in the terminal to start a conversation</p>
-              </div>
+              <div style="height: ${this.virtualScrollState.offsetTop}px;"></div>
             `
-                : repeat(
-                    this.messageGroups.slice(this.visibleStartIndex, this.visibleEndIndex),
-                    (group) => `${group.type}-${group.timestamp}`,
-                    (group) => this.renderMessageGroup(group)
-                  )
+                : ''
+            }
+            
+            <!-- Visible message groups -->
+            <div id="visible-groups">
+              ${
+                this.messageGroups.length === 0
+                  ? html`
+                    <div class="text-center text-gray-500 py-8">
+                      <p>No messages yet</p>
+                      <p class="text-sm mt-2">Type in the terminal to start a conversation</p>
+                    </div>
+                  `
+                  : repeat(
+                      this.visibleGroups,
+                      (group) => group.id,
+                      (group) => html`
+                        <div 
+                          data-group-id="${group.id}"
+                          class="message-group-container"
+                        >
+                          ${this.renderMessageGroup(group)}
+                        </div>
+                      `
+                    )
+              }
+            </div>
+            
+            <!-- Virtual spacer for scrolled out content below -->
+            ${
+              this.virtualScrollState.offsetBottom > 0
+                ? html`
+              <div style="height: ${this.virtualScrollState.offsetBottom}px;"></div>
+            `
+                : ''
             }
           </div>
 
@@ -856,6 +1254,16 @@ export class ChatView extends LitElement {
 
   firstUpdated() {
     this.scrollContainer = this.querySelector('#scroll-container') as HTMLElement;
+    // this.virtualContainer = this.querySelector('#messages-container') as HTMLElement;
+
+    // Setup virtual scrolling
+    this.setupVirtualScrolling();
+
+    // Initialize virtual scroll state
+    if (this.scrollContainer) {
+      this.virtualScrollState.viewportHeight = this.scrollContainer.clientHeight;
+      this.updateVirtualScrollState();
+    }
 
     // Set up touch handlers for pull to refresh
     if (this.isMobile) {
@@ -865,6 +1273,14 @@ export class ChatView extends LitElement {
     // Check if we have history available
     if (this.sessionId) {
       this.hasMoreHistory = chatSubscriptionService.hasMoreHistory(this.sessionId);
+    }
+
+    // Observe all rendered groups for height measurement
+    if (this.resizeObserver) {
+      const groupElements = this.querySelectorAll('[data-group-id]');
+      groupElements.forEach((element) => {
+        this.resizeObserver?.observe(element);
+      });
     }
   }
 }

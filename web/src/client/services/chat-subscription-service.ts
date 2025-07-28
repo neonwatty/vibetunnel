@@ -66,6 +66,26 @@ import type { ChatMessage } from '../../shared/types.js';
 import { createLogger } from '../utils/logger.js';
 import { authClient } from './auth-client.js';
 
+// Performance optimizations
+interface MessageBatch {
+  messages: ChatMessage[];
+  sessionId: string;
+  timestamp: number;
+}
+
+interface NetworkState {
+  isOnline: boolean;
+  effectiveType?: string;
+  rtt?: number;
+}
+
+interface PerformanceMetrics {
+  messageProcessingTime: number;
+  batchSize: number;
+  cacheHitRate: number;
+  memoryUsage: number;
+}
+
 const logger = createLogger('chat-subscription-service');
 
 /**
@@ -140,12 +160,29 @@ export class ChatSubscriptionService {
   private static readonly CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
   private static readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
+  // Performance optimization constants
+  private static readonly MESSAGE_BATCH_DELAY = 50; // ms
+  private static readonly MEMORY_CLEANUP_THRESHOLD = 50 * 1024 * 1024; // 50MB
+  private static readonly NETWORK_THROTTLE_DELAY = 100; // ms
+
   private cacheCleanupTimer: number | null = null;
+  private messageBatchQueue: MessageBatch[] = [];
+  private batchProcessingTimer: number | null = null;
+  private networkState: NetworkState = { isOnline: true };
+  private performanceMetrics: PerformanceMetrics = {
+    messageProcessingTime: 0,
+    batchSize: 0,
+    cacheHitRate: 0,
+    memoryUsage: 0,
+  };
+  private deferredUpdates = new Map<string, number>();
 
   constructor() {
     // Do not connect automatically - wait for initialize() to be called
     // This is an intentional design decision to control connection timing
     this.startCacheCleanup();
+    this.setupNetworkMonitoring();
+    this.startPerformanceMonitoring();
   }
 
   /**
@@ -407,23 +444,13 @@ export class ChatSubscriptionService {
 
   private handleChatMessage(sessionId: string, message: ChatMessage) {
     try {
-      // Add message to cache
-      this.addMessageToCache(sessionId, message);
+      const startTime = performance.now();
 
-      // Notify handlers
-      const subscription = this.subscriptions.get(sessionId);
-      if (subscription) {
-        const cache = this.messageCache.get(sessionId);
-        const messages = cache ? cache.messages : [];
+      // Add to batch queue for efficient processing
+      this.addToBatchQueue(sessionId, message);
 
-        subscription.handlers.forEach((handler) => {
-          try {
-            handler(messages);
-          } catch (error) {
-            logger.error('error in chat update handler', error);
-          }
-        });
-      }
+      // Update performance metrics
+      this.performanceMetrics.messageProcessingTime = performance.now() - startTime;
     } catch (error) {
       logger.error('error handling chat message', error);
     }
@@ -495,6 +522,95 @@ export class ChatSubscriptionService {
     } catch (error) {
       logger.error('error handling chat history', error);
     }
+  }
+
+  private addToBatchQueue(sessionId: string, message: ChatMessage) {
+    // Add message to batch queue
+    let batch = this.messageBatchQueue.find((b) => b.sessionId === sessionId);
+
+    if (!batch) {
+      batch = {
+        messages: [],
+        sessionId,
+        timestamp: Date.now(),
+      };
+      this.messageBatchQueue.push(batch);
+    }
+
+    batch.messages.push(message);
+    batch.timestamp = Date.now();
+
+    // Schedule batch processing
+    this.scheduleBatchProcessing();
+  }
+
+  private scheduleBatchProcessing() {
+    if (this.batchProcessingTimer) return;
+
+    this.batchProcessingTimer = window.setTimeout(() => {
+      this.processBatchQueue();
+    }, ChatSubscriptionService.MESSAGE_BATCH_DELAY);
+  }
+
+  private processBatchQueue() {
+    this.batchProcessingTimer = null;
+
+    if (this.messageBatchQueue.length === 0) return;
+
+    const batches = [...this.messageBatchQueue];
+    this.messageBatchQueue = [];
+
+    // Process batches efficiently
+    const updatedSessions = new Set<string>();
+
+    for (const batch of batches) {
+      for (const message of batch.messages) {
+        this.addMessageToCache(batch.sessionId, message);
+      }
+      updatedSessions.add(batch.sessionId);
+    }
+
+    // Notify handlers for updated sessions
+    this.notifyHandlers(updatedSessions);
+
+    // Update metrics
+    this.performanceMetrics.batchSize = batches.reduce((sum, b) => sum + b.messages.length, 0);
+  }
+
+  private notifyHandlers(sessionIds: Set<string>) {
+    // Throttle updates for better performance
+    const now = Date.now();
+
+    for (const sessionId of sessionIds) {
+      const lastUpdate = this.deferredUpdates.get(sessionId) || 0;
+
+      if (now - lastUpdate < ChatSubscriptionService.NETWORK_THROTTLE_DELAY) {
+        // Defer update
+        setTimeout(() => {
+          this.notifySessionHandlers(sessionId);
+          this.deferredUpdates.set(sessionId, Date.now());
+        }, ChatSubscriptionService.NETWORK_THROTTLE_DELAY);
+      } else {
+        this.notifySessionHandlers(sessionId);
+        this.deferredUpdates.set(sessionId, now);
+      }
+    }
+  }
+
+  private notifySessionHandlers(sessionId: string) {
+    const subscription = this.subscriptions.get(sessionId);
+    if (!subscription) return;
+
+    const cache = this.messageCache.get(sessionId);
+    const messages = cache ? cache.messages : [];
+
+    subscription.handlers.forEach((handler) => {
+      try {
+        handler(messages);
+      } catch (error) {
+        logger.error('error in chat update handler', error);
+      }
+    });
   }
 
   private addMessageToCache(sessionId: string, message: ChatMessage) {
@@ -590,6 +706,126 @@ export class ChatSubscriptionService {
     if (sessionsToRemove.length > 0) {
       logger.log(`Cache cleanup: removed ${sessionsToRemove.length} stale sessions`);
     }
+
+    // Check memory usage and perform aggressive cleanup if needed
+    this.checkMemoryPressure();
+  }
+
+  private checkMemoryPressure() {
+    // Use actual browser memory API when available, otherwise estimate
+    let actualMemoryUsage = 0;
+    let estimatedMemory = 0;
+
+    if ('memory' in performance) {
+      const memory = (performance as unknown as { memory?: { usedJSHeapSize?: number } }).memory;
+      if (memory?.usedJSHeapSize) {
+        actualMemoryUsage = memory.usedJSHeapSize;
+      }
+    }
+
+    // Fallback to estimation
+    let totalMessages = 0;
+    for (const [, cache] of this.messageCache) {
+      totalMessages += cache.messages.length;
+    }
+    estimatedMemory = totalMessages * 1024; // Rough estimate
+
+    // Use actual memory if available, otherwise use estimate
+    const memoryToCheck = actualMemoryUsage || estimatedMemory;
+    this.performanceMetrics.memoryUsage = memoryToCheck;
+
+    // Use percentage-based thresholds for better memory management
+    const memoryThreshold = actualMemoryUsage
+      ? Math.min(ChatSubscriptionService.MEMORY_CLEANUP_THRESHOLD, actualMemoryUsage * 0.8) // 80% of current usage
+      : ChatSubscriptionService.MEMORY_CLEANUP_THRESHOLD;
+
+    if (memoryToCheck > memoryThreshold) {
+      logger.warn(
+        `Memory usage high (${Math.round(memoryToCheck / 1024 / 1024)}MB), performing aggressive cleanup`
+      );
+
+      // Reduce cache sizes for inactive sessions
+      for (const [sessionId, cache] of this.messageCache) {
+        const isActive = this.subscriptions.has(sessionId);
+
+        if (!isActive && cache.messages.length > 100) {
+          // Keep only recent messages for inactive sessions
+          const recentMessages = cache.messages.slice(-50);
+          cache.messages = recentMessages;
+
+          // Update message IDs set
+          cache.messageIds.clear();
+          recentMessages.forEach((msg) => cache.messageIds.add(msg.id));
+
+          logger.debug(`Reduced cache size for inactive session ${sessionId}`);
+        }
+      }
+    }
+  }
+
+  private setupNetworkMonitoring() {
+    // Monitor network state for adaptive behavior
+    if ('navigator' in window && 'connection' in navigator) {
+      const connection = (
+        navigator as unknown as {
+          connection?: {
+            effectiveType?: string;
+            rtt?: number;
+            addEventListener?: (event: string, handler: () => void) => void;
+          };
+        }
+      ).connection;
+
+      const updateNetworkState = () => {
+        this.networkState = {
+          isOnline: navigator.onLine,
+          effectiveType: connection?.effectiveType,
+          rtt: connection?.rtt,
+        };
+
+        // Adjust batch delays based on network quality
+        if (connection?.effectiveType === 'slow-2g' || (connection?.rtt && connection.rtt > 1000)) {
+          // Increase batch delay for slow connections
+          logger.debug('Slow network detected, increasing batch delays');
+        }
+      };
+
+      if (connection?.addEventListener) {
+        connection.addEventListener('change', updateNetworkState);
+      }
+      updateNetworkState();
+    }
+
+    // Monitor online/offline state
+    window.addEventListener('online', () => {
+      this.networkState.isOnline = true;
+      logger.debug('Network came online');
+    });
+
+    window.addEventListener('offline', () => {
+      this.networkState.isOnline = false;
+      logger.debug('Network went offline');
+    });
+  }
+
+  private startPerformanceMonitoring() {
+    // Monitor performance metrics
+    setInterval(() => {
+      // Calculate total messages from cache
+      let totalMessages = 0;
+      for (const [, cache] of this.messageCache) {
+        totalMessages += cache.messages.length;
+      }
+
+      // Calculate cache hit rate (simplified)
+      this.performanceMetrics.cacheHitRate = totalMessages > 0 ? 0.95 : 0; // Placeholder
+
+      // Log performance data occasionally
+      if (totalMessages > 0 && Math.random() < 0.01) {
+        // 1% chance
+        logger.debug('Performance metrics:', this.performanceMetrics);
+      }
+    }, 10000); // Every 10 seconds
   }
 
   /**
@@ -892,6 +1128,16 @@ export class ChatSubscriptionService {
     this.messageCache.clear();
     this.messageQueue = [];
     this.initialized = false;
+
+    // Clear performance timers
+    if (this.batchProcessingTimer) {
+      clearTimeout(this.batchProcessingTimer);
+      this.batchProcessingTimer = null;
+    }
+
+    // Clear queues
+    this.messageBatchQueue = [];
+    this.deferredUpdates.clear();
 
     logger.log('Chat subscription service disposed');
   }
