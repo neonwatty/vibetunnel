@@ -16,7 +16,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="theme-color" content="#1e1e1e" />
+    <meta name="theme-color" content="#fafafa" />
 
     <!-- Favicon -->
     <link rel="icon" href="/favicon.ico" />
@@ -77,25 +77,40 @@
     <!-- Initialize theme immediately to prevent flash -->
     <script>
       (function() {
-        // Load saved theme preference or use system preference
-        const saved = localStorage.getItem('vibetunnel-theme');
-        const theme = saved || 'system';
-        
-        // Apply theme immediately
-        if (theme === 'system') {
-          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
-        } else {
-          document.documentElement.setAttribute('data-theme', theme);
+        try {
+          // Load saved theme preference or use system preference
+          const saved = localStorage.getItem('vibetunnel-theme');
+          const preference = saved && ['light', 'dark', 'system'].includes(saved) ? saved : 'system';
+          
+          // Determine effective theme
+          let effectiveTheme = 'light';
+          if (preference === 'system') {
+            effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          } else if (preference === 'dark') {
+            effectiveTheme = 'dark';
+          }
+          
+          // Apply theme immediately
+          document.documentElement.setAttribute('data-theme', effectiveTheme);
+          
+          // Set initial background color to prevent flash
+          document.documentElement.style.backgroundColor = effectiveTheme === 'dark' ? '#171717' : '#fafafa';
+          
+          // Update theme-color meta tag
+          const metaTheme = document.querySelector('meta[name="theme-color"]');
+          if (metaTheme) {
+            metaTheme.setAttribute('content', effectiveTheme === 'dark' ? '#171717' : '#fafafa');
+          }
+          
+          // Update iOS status bar style
+          const metaStatusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+          if (metaStatusBar) {
+            metaStatusBar.setAttribute('content', effectiveTheme === 'dark' ? 'black-translucent' : 'default');
+          }
+        } catch (e) {
+          // Fail silently, theme manager will handle it later
+          console.error('Failed to apply early theme:', e);
         }
-        
-        // Apply immediate background to prevent flash
-        const effectiveTheme = theme === 'system' 
-          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-          : theme;
-        
-        // Set initial background color
-        document.documentElement.style.backgroundColor = effectiveTheme === 'dark' ? '#0a0a0a' : '#fafafa';
       })();
     </script>
   </head>

@@ -97,7 +97,7 @@ export class ChatActions extends LitElement {
 
     return html`
       <div 
-        class="chat-actions flex items-center justify-center gap-4 px-4 py-2 bg-gray-800/50 backdrop-blur-sm border-t border-gray-700"
+        class="chat-actions flex items-center justify-center gap-4 px-4 py-2 bg-surface/50 backdrop-blur-sm border-t border-border"
         style="z-index: ${Z_INDEX.MOBILE_OVERLAY}"
       >
         <!-- Stop Session Button -->
@@ -107,8 +107,8 @@ export class ChatActions extends LitElement {
           class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
                  ${
                    canStop && !this.disabled
-                     ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30 active:bg-red-600/40'
-                     : 'bg-gray-700/50 text-gray-500 cursor-not-allowed opacity-50'
+                     ? 'bg-status-error/20 text-status-error hover:bg-status-error/30 active:bg-status-error/40'
+                     : 'bg-surface/50 text-text-dim cursor-not-allowed opacity-50'
                  }"
           aria-label="Stop session"
           title="${this.isMobile ? '' : 'Stop the current session'}"
@@ -127,8 +127,8 @@ export class ChatActions extends LitElement {
           class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
                  ${
                    canClear && !this.disabled
-                     ? 'bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 active:bg-yellow-600/40'
-                     : 'bg-gray-700/50 text-gray-500 cursor-not-allowed opacity-50'
+                     ? 'bg-status-warning/20 text-status-warning hover:bg-status-warning/30 active:bg-status-warning/40'
+                     : 'bg-surface/50 text-text-dim cursor-not-allowed opacity-50'
                  }"
           aria-label="Clear chat"
           title="${this.isMobile ? '' : 'Clear all chat messages'}"
@@ -147,7 +147,7 @@ export class ChatActions extends LitElement {
           class="flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-all
                  ${
                    canCopy && !this.disabled && !this.copyButtonDisabled
-                     ? 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 active:bg-blue-600/40'
+                     ? 'bg-primary/20 text-primary hover:bg-primary/30 active:bg-primary/40'
                      : 'bg-gray-700/50 text-gray-500 cursor-not-allowed opacity-50'
                  }"
           aria-label="Copy all messages"

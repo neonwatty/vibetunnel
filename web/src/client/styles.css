@@ -19,7 +19,7 @@
   --color-text: 23 23 23; /* #171717 - Near black for high contrast */
   --color-text-bright: 0 0 0; /* #000000 - Pure black for emphasis */
   --color-text-muted: 75 75 75; /* #4b4b4b - Darker muted gray for AAA compliance */
-  --color-text-dim: 115 115 115; /* #737373 - Darker dim gray for AA compliance */
+  --color-text-dim: 100 100 100; /* #646464 - Darker dim gray for better contrast */
   
   /* Primary color (same across themes) */
   --color-primary: 16 185 129; /* #10B981 - VibeTunnel green */
@@ -31,6 +31,23 @@
   --color-status-warning: 245 158 11; /* #F59E0B */
   --color-status-success: 16 185 129; /* #10B981 */
   --color-status-info: 59 130 246; /* #3B82F6 */
+  
+  /* Chat-specific colors - Light Mode */
+  --color-chat-bubble-user: 37 99 235; /* #2563EB - Darker blue for WCAG AA compliance */
+  --color-chat-bubble-user-text: 255 255 255; /* #FFFFFF - White text on blue */
+  --color-chat-bubble-assistant: 240 240 240; /* #F0F0F0 - Light gray for assistant */
+  --color-chat-bubble-assistant-text: 23 23 23; /* #171717 - Dark text on light bg */
+  --color-chat-bubble-system: 254 243 199; /* #FEF3C7 - Warm yellow for system */
+  --color-chat-bubble-system-text: 120 53 15; /* #78350F - Dark amber text */
+  --color-chat-bubble-error: 254 226 226; /* #FEE2E2 - Light red for errors */
+  --color-chat-bubble-error-text: 153 27 27; /* #991B1B - Dark red text */
+  --color-chat-input-bg: 250 250 250; /* #FAFAFA - Match page bg */
+  --color-chat-input-border: 226 226 226; /* #E2E2E2 - Subtle border */
+  --color-chat-header-bg: 255 255 255; /* #FFFFFF - White header */
+  --color-chat-code-bg: 31 41 55; /* #1F2937 - Dark code background */
+  --color-chat-code-text: 229 231 235; /* #E5E7EB - Light text for code */
+  --color-chat-thinking-bg: 243 244 246; /* #F3F4F6 - Light gray for thinking */
+  --color-chat-thinking-border: 209 213 219; /* #D1D5DB - Gray border */
   /* Breakpoints */
   --vt-breakpoint-mobile: 768px;
   --vt-breakpoint-tablet: 1024px;
@@ -82,7 +99,7 @@
   --color-text: 228 228 228; /* #e4e4e4 */
   --color-text-bright: 255 255 255; /* #ffffff */
   --color-text-muted: 163 163 163; /* #a3a3a3 */
-  --color-text-dim: 115 115 115; /* #737373 */
+  --color-text-dim: 140 140 140; /* #8C8C8C - Better contrast in dark mode */
   
   /* Primary color (same as light mode) */
   --color-primary: 16 185 129; /* #10B981 */
@@ -94,6 +111,23 @@
   --color-status-warning: 245 158 11; /* #F59E0B */
   --color-status-success: 16 185 129; /* #10B981 */
   --color-status-info: 59 130 246; /* #3B82F6 */
+  
+  /* Chat-specific colors - Dark Mode */
+  --color-chat-bubble-user: 96 165 250; /* #60A5FA - Lighter blue for dark mode contrast */
+  --color-chat-bubble-user-text: 255 255 255; /* #FFFFFF - White text on blue */
+  --color-chat-bubble-assistant: 55 65 81; /* #374151 - Dark gray for assistant */
+  --color-chat-bubble-assistant-text: 243 244 246; /* #F3F4F6 - Light text */
+  --color-chat-bubble-system: 120 53 15; /* #78350F - Dark amber for system */
+  --color-chat-bubble-system-text: 254 243 199; /* #FEF3C7 - Light amber text */
+  --color-chat-bubble-error: 127 29 29; /* #7F1D1D - Dark red for errors */
+  --color-chat-bubble-error-text: 254 226 226; /* #FEE2E2 - Light red text */
+  --color-chat-input-bg: 32 32 32; /* #202020 - Slightly darker than bg */
+  --color-chat-input-border: 64 64 64; /* #404040 - Subtle border */
+  --color-chat-header-bg: 32 32 32; /* #202020 - Dark header */
+  --color-chat-code-bg: 17 24 39; /* #111827 - Darker code background */
+  --color-chat-code-text: 229 231 235; /* #E5E7EB - Light text for code */
+  --color-chat-thinking-bg: 31 41 55; /* #1F2937 - Dark gray for thinking */
+  --color-chat-thinking-border: 75 85 99; /* #4B5563 - Gray border */
 }
 
 /* System preference detection */
@@ -119,6 +153,21 @@
     --color-status-warning: 245 158 11;
     --color-status-success: 16 185 129;
     --color-status-info: 59 130 246;
+    --color-chat-bubble-user: 59 130 246;
+    --color-chat-bubble-user-text: 255 255 255;
+    --color-chat-bubble-assistant: 55 65 81;
+    --color-chat-bubble-assistant-text: 243 244 246;
+    --color-chat-bubble-system: 120 53 15;
+    --color-chat-bubble-system-text: 254 243 199;
+    --color-chat-bubble-error: 127 29 29;
+    --color-chat-bubble-error-text: 254 226 226;
+    --color-chat-input-bg: 32 32 32;
+    --color-chat-input-border: 64 64 64;
+    --color-chat-header-bg: 32 32 32;
+    --color-chat-code-bg: 17 24 39;
+    --color-chat-code-text: 229 231 235;
+    --color-chat-thinking-bg: 31 41 55;
+    --color-chat-thinking-border: 75 85 99;
   }
 }
 
@@ -131,6 +180,21 @@
   body {
     @apply bg-bg text-text;
     transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  /* Prevent FOUC by applying theme transitions only after initial load */
+  body.theme-transition-ready * {
+    transition-property: background-color, color, border-color;
+    transition-duration: 0.3s;
+    transition-timing-function: ease;
+  }
+  
+  /* Respect reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    body,
+    body.theme-transition-ready * {
+      transition: none !important;
+    }
   }
 
   /* Default focus styles */

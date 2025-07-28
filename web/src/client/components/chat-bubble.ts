@@ -123,21 +123,21 @@ export class ChatBubble extends LitElement {
 
       case ContentSegmentType.CODE:
         return html`
-          <div class="my-2 overflow-hidden rounded-lg bg-gray-900 dark:bg-gray-950">
+          <div class="my-2 overflow-hidden rounded-lg bg-chat-code-bg">
             ${
               segment.language
                 ? html`
                   <div
-                    class="flex items-center justify-between border-b border-gray-700 px-3 py-1.5"
+                    class="flex items-center justify-between border-b border-border px-3 py-1.5"
                   >
-                    <span class="text-xs text-gray-400">${segment.language}</span>
+                    <span class="text-xs text-text-muted">${segment.language}</span>
                   </div>
                 `
                 : nothing
             }
             <pre
               class="overflow-x-auto p-3 text-sm"
-            ><code class="text-gray-100">${segment.content}</code></pre>
+            ><code class="text-chat-code-text">${segment.content}</code></pre>
           </div>
         `;
 
@@ -145,15 +145,15 @@ export class ChatBubble extends LitElement {
         const isExpanded = this.expandedThinking.has(segmentId);
         return html`
           <div
-            class="my-2 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50"
+            class="my-2 overflow-hidden rounded-lg border border-chat-thinking-border bg-chat-thinking-bg"
           >
             <button
               @click=${() => this.toggleThinking(segmentId)}
-              class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700/50"
+              class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-surface-hover"
               aria-expanded=${isExpanded}
               aria-label="${isExpanded ? 'Collapse' : 'Expand'} thinking"
             >
-              <span class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <span class="flex items-center gap-2 text-text-muted">
                 <svg
                   class="h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}"
                   fill="none"
@@ -169,7 +169,7 @@ export class ChatBubble extends LitElement {
                 </svg>
                 <span class="italic">Thinking...</span>
               </span>
-              <span class="text-xs text-gray-500 dark:text-gray-500">
+              <span class="text-xs text-text-dim">
                 ${isExpanded ? 'Click to hide' : 'Click to show'}
               </span>
             </button>
@@ -177,7 +177,7 @@ export class ChatBubble extends LitElement {
               isExpanded
                 ? html`
                   <div
-                    class="border-t border-gray-200 px-3 py-2 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400"
+                    class="border-t border-chat-thinking-border px-3 py-2 text-sm text-text-muted"
                   >
                     <pre class="whitespace-pre-wrap break-words">${segment.content}</pre>
                   </div>
@@ -202,14 +202,14 @@ export class ChatBubble extends LitElement {
 
     // Bubble styling based on message type
     const bubbleClasses = [
-      'relative max-w-[85%] px-4 py-3 rounded-2xl',
+      'relative max-w-[85%] px-4 py-3 rounded-2xl transition-colors',
       isUser
-        ? 'bg-blue-500 text-white dark:bg-blue-600'
+        ? 'bg-chat-bubble-user text-chat-bubble-user-text'
         : isError
-          ? 'bg-red-100 text-red-900 dark:bg-red-900/20 dark:text-red-200 border border-red-200 dark:border-red-800'
+          ? 'bg-chat-bubble-error text-chat-bubble-error-text border border-status-error/20'
           : isSystem
-            ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
-            : 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100',
+            ? 'bg-chat-bubble-system text-chat-bubble-system-text border border-border'
+            : 'bg-chat-bubble-assistant text-chat-bubble-assistant-text',
     ].join(' ');
 
     // Container styling with grouped message handling
@@ -235,10 +235,10 @@ export class ChatBubble extends LitElement {
                         <div
                           class="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br ${
                             isError
-                              ? 'from-red-400 to-red-600'
+                              ? 'from-status-error to-red-600'
                               : isSystem
-                                ? 'from-gray-400 to-gray-600'
-                                : 'from-purple-400 to-purple-600'
+                                ? 'from-text-muted to-text-dim'
+                                : 'from-primary to-primary-dark'
                           } text-xs font-medium text-white"
                         >
                           ${isError ? '!' : isSystem ? 'S' : 'C'}
@@ -246,7 +246,7 @@ export class ChatBubble extends LitElement {
                       `
                       : nothing
                   }
-                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                  <span class="text-xs text-text-muted">
                     ${this.formatTimestamp(this.message.timestamp)}
                   </span>
                 </div>
@@ -267,7 +267,7 @@ export class ChatBubble extends LitElement {
                 ? html`
                   <button
                     @click=${this.handleCopy}
-                    class="absolute -bottom-6 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                    class="absolute -bottom-6 right-0 flex items-center gap-1 rounded px-2 py-1 text-xs text-text-muted transition-colors hover:bg-surface hover:text-text"
                     aria-label="Copy message"
                   >
                     ${

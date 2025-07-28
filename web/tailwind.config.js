@@ -38,6 +38,35 @@ module.exports = {
                 "status-warning": "#F59E0B",
                 "status-success": "#10B981",
                 "status-info": "#3B82F6",
+                
+                // Chat-specific colors (theme-aware)
+                "chat": {
+                    "bubble": {
+                        "user": "rgb(var(--color-chat-bubble-user) / <alpha-value>)",
+                        "user-text": "rgb(var(--color-chat-bubble-user-text) / <alpha-value>)",
+                        "assistant": "rgb(var(--color-chat-bubble-assistant) / <alpha-value>)",
+                        "assistant-text": "rgb(var(--color-chat-bubble-assistant-text) / <alpha-value>)",
+                        "system": "rgb(var(--color-chat-bubble-system) / <alpha-value>)",
+                        "system-text": "rgb(var(--color-chat-bubble-system-text) / <alpha-value>)",
+                        "error": "rgb(var(--color-chat-bubble-error) / <alpha-value>)",
+                        "error-text": "rgb(var(--color-chat-bubble-error-text) / <alpha-value>)",
+                    },
+                    "input": {
+                        "bg": "rgb(var(--color-chat-input-bg) / <alpha-value>)",
+                        "border": "rgb(var(--color-chat-input-border) / <alpha-value>)",
+                    },
+                    "header": {
+                        "bg": "rgb(var(--color-chat-header-bg) / <alpha-value>)",
+                    },
+                    "code": {
+                        "bg": "rgb(var(--color-chat-code-bg) / <alpha-value>)",
+                        "text": "rgb(var(--color-chat-code-text) / <alpha-value>)",
+                    },
+                    "thinking": {
+                        "bg": "rgb(var(--color-chat-thinking-bg) / <alpha-value>)",
+                        "border": "rgb(var(--color-chat-thinking-border) / <alpha-value>)",
+                    },
+                },
             },
             boxShadow: {
                 // Unified glow effects with primary color

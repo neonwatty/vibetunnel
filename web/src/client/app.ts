@@ -21,6 +21,7 @@ import { createLogger } from './utils/logger.js';
 import { isIOS } from './utils/mobile-utils.js';
 import { type MediaQueryState, responsiveObserver } from './utils/responsive-utils.js';
 import { triggerTerminalResize } from './utils/terminal-utils.js';
+import { themeManager } from './utils/theme-manager.js';
 import { titleManager } from './utils/title-manager.js';
 // Import version
 import { VERSION } from './version.js';
@@ -106,6 +107,8 @@ export class VibeTunnelApp extends LitElement {
     this.setupResponsiveObserver();
     this.setupPreferences();
     this.setupViewportMeta();
+    // Initialize theme manager to ensure it's ready
+    themeManager();
     // Initialize title updater
     titleManager.initAutoUpdates();
     // Listen for keyboard capture toggle events from input manager
@@ -132,6 +135,11 @@ export class VibeTunnelApp extends LitElement {
       setTimeout(() => {
         this.sidebarAnimationReady = true;
       }, 100);
+
+      // Enable theme transitions after initial render to prevent FOUC
+      requestAnimationFrame(() => {
+        document.body.classList.add('theme-transition-ready');
+      });
     });
   }
 

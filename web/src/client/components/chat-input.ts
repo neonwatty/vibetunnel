@@ -262,7 +262,7 @@ export class ChatInput extends LitElement {
 
     return html`
       <div
-        class="chat-input-container flex items-end gap-2 px-4 py-3 border-t border-gray-800 bg-gray-900 ${this.isIOSDevice ? 'ios-safe-area' : ''}"
+        class="chat-input-container flex items-end gap-2 px-4 py-3 border-t border-chat-input-border bg-chat-input-bg ${this.isIOSDevice ? 'ios-safe-area' : ''}"
         style="z-index: ${Z_INDEX.MOBILE_OVERLAY}; ${safeAreaStyles}"
       >
         <!-- Textarea container -->
@@ -279,7 +279,7 @@ export class ChatInput extends LitElement {
             placeholder=${this.placeholder}
             ?disabled=${isDisabled}
             rows=${this.rows}
-            class="w-full resize-none rounded-lg bg-gray-800 px-4 py-3 text-white placeholder-gray-500 border border-gray-700 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            class="w-full resize-none rounded-lg bg-surface px-4 py-3 text-text placeholder-text-muted border border-border focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             style="min-height: 48px; max-height: ${MAX_ROWS * ROW_HEIGHT}px;"
             aria-label="Message input"
             aria-multiline="true"
@@ -292,7 +292,7 @@ export class ChatInput extends LitElement {
               ? html`
                 <div
                   class="absolute bottom-1 right-2 text-xs ${
-                    this.value.length > 2000 ? 'text-red-400' : 'text-gray-500'
+                    this.value.length > 2000 ? 'text-status-error' : 'text-text-dim'
                   }"
                 >
                   ${this.value.length}/2000
@@ -306,7 +306,7 @@ export class ChatInput extends LitElement {
         <button
           @click=${this.sendMessage}
           ?disabled=${isDisabled || !this.value.trim()}
-          class="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          class="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-lg bg-primary text-white hover:bg-primary-hover active:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           aria-label="Send message"
         >
           ${

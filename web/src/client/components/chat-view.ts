@@ -25,7 +25,9 @@ import './chat-bubble.js';
 import './optimized-chat-bubble.js';
 import './chat-input.js';
 import './pull-to-refresh.js';
+import './mobile-theme-toggle.js';
 import { domPool } from '../utils/dom-pool.js';
+import { themeManager } from '../utils/theme-manager.js';
 import type { PullToRefreshState } from './pull-to-refresh.js';
 
 const logger = createLogger('chat-view');
@@ -115,6 +117,7 @@ export class ChatView extends LitElement {
   @state() private pullDistance = 0;
   @state() private hasMoreHistory = true;
   @state() private isVisible = true; // Track component visibility
+  @state() private currentTheme: 'light' | 'dark' = 'light';
 
   private ws: WebSocket | null = null;
   private scrollContainer: HTMLElement | null = null;
@@ -139,6 +142,7 @@ export class ChatView extends LitElement {
   private lastRenderTime = 0;
   private pendingRenderBatch?: RenderBatch;
   private messageHeightCache = new Map<string, number>();
+  private themeUnsubscribe?: () => void;
 
   connectedCallback() {
     super.connectedCallback();
@@ -146,6 +150,11 @@ export class ChatView extends LitElement {
 
     // Subscribe to viewport changes
     this.viewportUnsubscribe = mobileViewportManager.subscribe(this.handleViewportStateChange);
+
+    // Subscribe to theme changes
+    this.themeUnsubscribe = themeManager().subscribe((config) => {
+      this.currentTheme = config.effective;
+    });
   }
 
   disconnectedCallback() {
@@ -162,6 +171,10 @@ export class ChatView extends LitElement {
 
     if (this.viewportResizeTimeout) {
       clearTimeout(this.viewportResizeTimeout);
+    }
+
+    if (this.themeUnsubscribe) {
+      this.themeUnsubscribe();
     }
   }
 
@@ -1080,13 +1093,13 @@ export class ChatView extends LitElement {
 
   render() {
     return html`
-      <div class="chat-view flex flex-col h-full bg-gray-900 text-white">
+      <div class="chat-view flex flex-col h-full bg-bg text-text">
         <!-- Header -->
-        <div class="chat-header flex items-center justify-between px-4 py-3 border-b border-gray-800" 
+        <div class="chat-header flex items-center justify-between px-4 py-3 border-b border-border bg-chat-header-bg" 
              style="z-index: ${Z_INDEX.MOBILE_OVERLAY}">
           <button
             @click=${() => this.dispatchEvent(new CustomEvent('navigate-back', { bubbles: true, composed: true }))}
-            class="p-2 hover:bg-gray-800 rounded"
+            class="p-2 hover:bg-surface-hover rounded transition-colors"
             aria-label="Back to terminal"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1099,21 +1112,32 @@ export class ChatView extends LitElement {
             ${
               this.session?.sessionType === 'claude'
                 ? html`
-              <div class="text-xs text-gray-500">Claude Assistant</div>
+              <div class="text-xs text-text-muted">Claude Assistant</div>
             `
                 : ''
             }
           </div>
 
-          <button
-            @click=${this.scrollToBottom}
-            class="p-2 hover:bg-gray-800 rounded ${this.isAutoScrollEnabled ? 'opacity-50' : ''}"
-            aria-label="Scroll to bottom"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-            </svg>
-          </button>
+          <div class="flex items-center gap-1">
+            <!-- Theme toggle -->
+            <mobile-theme-toggle
+              .theme=${this.currentTheme}
+              @theme-changed=${(e: CustomEvent<'light' | 'dark'>) => {
+                themeManager().setPreference(e.detail);
+              }}
+            ></mobile-theme-toggle>
+            
+            <!-- Scroll to bottom -->
+            <button
+              @click=${this.scrollToBottom}
+              class="p-2 hover:bg-surface-hover rounded transition-colors ${this.isAutoScrollEnabled ? 'opacity-50' : ''}"
+              aria-label="Scroll to bottom"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Messages container -->
@@ -1167,7 +1191,7 @@ export class ChatView extends LitElement {
               ${
                 this.messageGroups.length === 0
                   ? html`
-                    <div class="text-center text-gray-500 py-8">
+                    <div class="text-center text-text-muted py-8">
                       <p>No messages yet</p>
                       <p class="text-sm mt-2">Type in the terminal to start a conversation</p>
                     </div>
@@ -1203,7 +1227,7 @@ export class ChatView extends LitElement {
               ? html`
             <button
               @click=${this.scrollToBottom}
-              class="fixed bottom-20 right-4 bg-blue-600 text-white rounded-full p-3 shadow-lg"
+              class="fixed bottom-20 right-4 bg-primary text-white rounded-full p-3 shadow-lg hover:bg-primary-hover transition-colors"
               style="z-index: ${Z_INDEX.MOBILE_OVERLAY}"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
