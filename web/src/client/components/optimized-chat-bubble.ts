@@ -14,6 +14,7 @@
 
 import { html, LitElement, nothing, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import {
   type ChatMessage,
   ChatMessageType,
@@ -51,6 +52,9 @@ export class OptimizedChatBubble extends LitElement {
   @property({ type: Boolean }) isLastInGroup = true;
   @property({ type: Boolean }) lazy = true; // Enable lazy rendering
   @property({ type: Boolean }) recycled = false; // Whether this element is from pool
+  @property({ type: String }) searchQuery = ''; // Current search query for highlighting
+  @property({ type: Boolean }) isHighlighted = false; // Whether this message matches search
+  @property({ type: Boolean }) isCurrentMatch = false; // Whether this is the current search match
 
   @state() private expandedThinking = new Set<string>();
   @state() private copied = false;
@@ -282,6 +286,22 @@ export class OptimizedChatBubble extends LitElement {
     });
   }
 
+  private highlightSearchTerm(text: string): string {
+    if (!this.searchQuery || !this.isHighlighted) {
+      return text;
+    }
+
+    // Escape special regex characters
+    const escapedQuery = this.searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+
+    const baseHighlight = 'bg-yellow-200 dark:bg-yellow-800 px-1 rounded';
+    const currentHighlight = 'bg-yellow-400 dark:bg-yellow-600 px-1 rounded shadow-md';
+    const highlightClass = this.isCurrentMatch ? currentHighlight : baseHighlight;
+
+    return text.replace(regex, `<mark class="${highlightClass}">$1</mark>`);
+  }
+
   private renderSegment(lazyItem: LazyContent): TemplateResult | typeof nothing {
     const { segment, index, isLoaded } = lazyItem;
     const segmentId = `${this.message?.id}-${index}`;
@@ -296,7 +316,7 @@ export class OptimizedChatBubble extends LitElement {
     switch (segment.type) {
       case ContentSegmentType.TEXT:
         return html`
-          <div class="whitespace-pre-wrap break-words">${segment.content}</div>
+          <div class="whitespace-pre-wrap break-words">${unsafeHTML(this.highlightSearchTerm(segment.content))}</div>
         `;
 
       case ContentSegmentType.CODE:
@@ -338,7 +358,7 @@ export class OptimizedChatBubble extends LitElement {
               isExpanded
                 ? html`
                   <div class="border-t border-gray-200 px-3 py-2 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
-                    <pre class="whitespace-pre-wrap break-words">${segment.content}</pre>
+                    <pre class="whitespace-pre-wrap break-words">${unsafeHTML(this.highlightSearchTerm(segment.content))}</pre>
                   </div>
                 `
                 : nothing

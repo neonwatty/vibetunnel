@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#fafafa">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Theme Test - VibeTunnel Chat</title>
+    <link rel="stylesheet" href="../../styles.css">
+    <script type="module">
+        import './mobile-theme-toggle.js';
+        import { themeManager } from '../utils/theme-manager.js';
+        
+        // Example of theme subscription
+        themeManager().subscribe((config) => {
+            console.log('Theme changed:', config);
+        });
+    </script>
+</head>
+<body class="bg-bg text-text min-h-screen">
+    <div class="p-4 max-w-4xl mx-auto">
+        <h1 class="text-2xl font-bold mb-4">VibeTunnel Chat Theme Test</h1>
+        
+        <!-- Theme Toggle -->
+        <div class="flex items-center gap-4 mb-8">
+            <span class="text-text-muted">Theme:</span>
+            <mobile-theme-toggle></mobile-theme-toggle>
+        </div>
+        
+        <!-- Color Samples -->
+        <div class="space-y-8">
+            <!-- Background Colors -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Background Colors</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="p-4 bg-bg border border-border rounded">bg-bg</div>
+                    <div class="p-4 bg-bg-secondary border border-border rounded">bg-bg-secondary</div>
+                    <div class="p-4 bg-bg-tertiary border border-border rounded">bg-bg-tertiary</div>
+                    <div class="p-4 bg-bg-elevated border border-border rounded">bg-bg-elevated</div>
+                </div>
+            </section>
+            
+            <!-- Text Colors -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Text Colors</h2>
+                <div class="space-y-2">
+                    <p class="text-text">text-text (Primary text)</p>
+                    <p class="text-text-bright">text-text-bright (Bright text)</p>
+                    <p class="text-text-muted">text-text-muted (Muted text)</p>
+                    <p class="text-text-dim">text-text-dim (Dim text)</p>
+                </div>
+            </section>
+            
+            <!-- Chat Bubbles -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Chat Bubbles</h2>
+                <div class="space-y-4">
+                    <div class="flex justify-end">
+                        <div class="bg-chat-bubble-user text-chat-bubble-user-text px-4 py-3 rounded-2xl max-w-xs">
+                            User message bubble
+                        </div>
+                    </div>
+                    <div class="flex justify-start">
+                        <div class="bg-chat-bubble-assistant text-chat-bubble-assistant-text px-4 py-3 rounded-2xl max-w-xs">
+                            Assistant message bubble
+                        </div>
+                    </div>
+                    <div class="flex justify-start">
+                        <div class="bg-chat-bubble-system text-chat-bubble-system-text px-4 py-3 rounded-2xl max-w-xs border border-border">
+                            System message bubble
+                        </div>
+                    </div>
+                    <div class="flex justify-start">
+                        <div class="bg-chat-bubble-error text-chat-bubble-error-text px-4 py-3 rounded-2xl max-w-xs border border-status-error/20">
+                            Error message bubble
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Code Block -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Code Block</h2>
+                <div class="bg-chat-code-bg rounded-lg overflow-hidden">
+                    <div class="border-b border-border px-3 py-1.5">
+                        <span class="text-xs text-text-muted">javascript</span>
+                    </div>
+                    <pre class="p-3 text-sm"><code class="text-chat-code-text">// Example code
+function helloWorld() {
+    console.log("Hello, VibeTunnel!");
+}</code></pre>
+                </div>
+            </section>
+            
+            <!-- Thinking Block -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Thinking Block</h2>
+                <div class="bg-chat-thinking-bg border border-chat-thinking-border rounded-lg p-3">
+                    <span class="text-text-muted italic">Thinking about the response...</span>
+                </div>
+            </section>
+            
+            <!-- Chat Input -->
+            <section>
+                <h2 class="text-xl font-semibold mb-4">Chat Input</h2>
+                <div class="bg-chat-input-bg border-t border-chat-input-border p-4">
+                    <div class="flex items-end gap-2">
+                        <textarea 
+                            class="flex-1 bg-surface px-4 py-3 text-text placeholder-text-muted border border-border rounded-lg focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                            placeholder="Type a message..."
+                            rows="1"
+                        ></textarea>
+                        <button class="w-12 h-12 bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors flex items-center justify-center">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</body>
+</html>

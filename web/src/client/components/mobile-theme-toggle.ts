@@ -17,7 +17,7 @@ export type Theme = 'light' | 'dark';
 
 @customElement('mobile-theme-toggle')
 export class MobileThemeToggle extends LitElement {
-  @property({ type: String }) theme: Theme = 'light';
+  @property({ type: String, reflect: true }) theme: Theme = 'light';
 
   createRenderRoot() {
     return this;

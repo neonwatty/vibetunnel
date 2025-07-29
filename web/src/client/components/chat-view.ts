@@ -26,6 +26,7 @@ import './optimized-chat-bubble.js';
 import './chat-input.js';
 import './pull-to-refresh.js';
 import './mobile-theme-toggle.js';
+import './chat-search.js';
 import { domPool } from '../utils/dom-pool.js';
 import { themeManager } from '../utils/theme-manager.js';
 import type { PullToRefreshState } from './pull-to-refresh.js';
@@ -118,6 +119,11 @@ export class ChatView extends LitElement {
   @state() private hasMoreHistory = true;
   @state() private isVisible = true; // Track component visibility
   @state() private currentTheme: 'light' | 'dark' = 'light';
+  @state() private isSearchOpen = false;
+  @state() private searchQuery = '';
+  @state() private searchResults: string[] = []; // Message IDs that match
+  @state() private currentSearchIndex = 0;
+  @state() private isSearching = false;
 
   private ws: WebSocket | null = null;
   private scrollContainer: HTMLElement | null = null;
@@ -1049,6 +1055,106 @@ export class ChatView extends LitElement {
     // });
   }
 
+  private toggleSearch() {
+    this.isSearchOpen = !this.isSearchOpen;
+    logger.log(`Search ${this.isSearchOpen ? 'opened' : 'closed'}`);
+
+    if (!this.isSearchOpen) {
+      // Clear search state when closing
+      this.clearSearch();
+    }
+  }
+
+  private handleSearch(event: CustomEvent<{ query: string }>) {
+    const { query } = event.detail;
+    this.searchQuery = query;
+    this.isSearching = true;
+
+    logger.log(`Searching for: ${query}`);
+
+    // Perform search through messages
+    this.performSearch(query);
+  }
+
+  private performSearch(query: string) {
+    if (!query.trim()) {
+      this.searchResults = [];
+      this.currentSearchIndex = 0;
+      this.isSearching = false;
+      return;
+    }
+
+    const results: string[] = [];
+    const normalizedQuery = query.toLowerCase();
+
+    // Search through all messages
+    for (const message of this.messages) {
+      // Search through all content segments
+      const hasMatch = message.content.some((segment) =>
+        segment.content.toLowerCase().includes(normalizedQuery)
+      );
+
+      if (hasMatch) {
+        results.push(message.id);
+      }
+    }
+
+    this.searchResults = results;
+    this.currentSearchIndex = results.length > 0 ? 1 : 0;
+    this.isSearching = false;
+
+    logger.log(`Found ${results.length} matches`);
+
+    // Scroll to first result if found
+    if (results.length > 0) {
+      this.scrollToSearchResult(0);
+    }
+  }
+
+  private clearSearch() {
+    this.searchQuery = '';
+    this.searchResults = [];
+    this.currentSearchIndex = 0;
+    this.isSearching = false;
+
+    // Remove highlight from messages
+    this.requestUpdate();
+  }
+
+  private handleSearchNavigation(event: CustomEvent<{ direction: 'prev' | 'next' }>) {
+    const { direction } = event.detail;
+
+    if (this.searchResults.length === 0) return;
+
+    if (direction === 'next') {
+      this.currentSearchIndex = (this.currentSearchIndex % this.searchResults.length) + 1;
+    } else {
+      this.currentSearchIndex =
+        this.currentSearchIndex > 1 ? this.currentSearchIndex - 1 : this.searchResults.length;
+    }
+
+    // Scroll to the current result
+    this.scrollToSearchResult(this.currentSearchIndex - 1);
+  }
+
+  private scrollToSearchResult(index: number) {
+    if (index < 0 || index >= this.searchResults.length) return;
+
+    const messageId = this.searchResults[index];
+    const messageElement = this.querySelector(`[data-message-id="${messageId}"]`);
+
+    if (messageElement && this.scrollContainer) {
+      const rect = messageElement.getBoundingClientRect();
+      const containerRect = this.scrollContainer.getBoundingClientRect();
+      const offset = rect.top - containerRect.top - 100; // 100px offset from top
+
+      this.scrollContainer.scrollTo({
+        top: this.scrollContainer.scrollTop + offset,
+        behavior: 'smooth',
+      });
+    }
+  }
+
   private renderMessageGroup(group: MessageGroup) {
     const useOptimized = this.messageGroups.length > 20; // Use optimized bubbles for large lists
 
@@ -1061,14 +1167,21 @@ export class ChatView extends LitElement {
             const isFirstInGroup = index === 0;
             const isLastInGroup = index === group.messages.length - 1;
 
+            const isHighlighted = this.searchResults.includes(message.id) && this.searchQuery;
+            const isCurrentMatch = this.searchResults[this.currentSearchIndex - 1] === message.id;
+
             return useOptimized
               ? html`
               <optimized-chat-bubble
+                data-message-id="${message.id}"
                 .message=${message}
                 .isGrouped=${true}
                 .isFirstInGroup=${isFirstInGroup}
                 .isLastInGroup=${isLastInGroup}
                 .lazy=${!this.isVisible}
+                .searchQuery=${this.searchQuery}
+                .isHighlighted=${isHighlighted}
+                .isCurrentMatch=${isCurrentMatch}
                 @copy-message=${(e: CustomEvent<string>) => {
                   logger.debug('Message copied:', `${e.detail.substring(0, 50)}...`);
                 }}
@@ -1076,10 +1189,14 @@ export class ChatView extends LitElement {
             `
               : html`
               <chat-bubble
+                data-message-id="${message.id}"
                 .message=${message}
                 .isGrouped=${true}
                 .isFirstInGroup=${isFirstInGroup}
                 .isLastInGroup=${isLastInGroup}
+                .searchQuery=${this.searchQuery}
+                .isHighlighted=${isHighlighted}
+                .isCurrentMatch=${isCurrentMatch}
                 @copy-message=${(e: CustomEvent<string>) => {
                   logger.debug('Message copied:', `${e.detail.substring(0, 50)}...`);
                 }}
@@ -1119,6 +1236,19 @@ export class ChatView extends LitElement {
           </div>
 
           <div class="flex items-center gap-1">
+            <!-- Search button -->
+            <button
+              @click=${this.toggleSearch}
+              class="p-2 hover:bg-surface-hover rounded transition-colors ${this.isSearchOpen ? 'bg-surface-hover' : ''}"
+              aria-label="Search messages"
+              aria-expanded=${this.isSearchOpen}
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+            
             <!-- Theme toggle -->
             <mobile-theme-toggle
               .theme=${this.currentTheme}
@@ -1139,6 +1269,18 @@ export class ChatView extends LitElement {
             </button>
           </div>
         </div>
+
+        <!-- Search component -->
+        <chat-search
+          .isOpen=${this.isSearchOpen}
+          .currentMatch=${this.currentSearchIndex}
+          .totalMatches=${this.searchResults.length}
+          .searching=${this.isSearching}
+          @search=${this.handleSearch}
+          @clear-search=${this.clearSearch}
+          @navigate-result=${this.handleSearchNavigation}
+          @close=${this.toggleSearch}
+        ></chat-search>
 
         <!-- Messages container -->
         <div 
